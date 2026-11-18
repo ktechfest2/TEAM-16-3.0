@@ -4,9 +4,11 @@ let client: SupabaseClient | null = null;
 export function browserSupabase() {
   if (!client) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anon) throw new Error("Supabase browser environment is not configured");
-    client = createClient(url, anon, {
+    const publishableKey =
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !publishableKey) throw new Error("Supabase browser environment is not configured");
+    client = createClient(url, publishableKey, {
       auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
     });
   }
