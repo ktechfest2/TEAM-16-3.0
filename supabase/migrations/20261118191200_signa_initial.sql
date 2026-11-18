@@ -125,6 +125,17 @@ create table if not exists public.case_events (
 );
 create index if not exists case_events_incident_idx on public.case_events(incident_id, id);
 
+-- Enforce append-only audit history even for accidental service-side mutations.
+create or replace function public.signa_reject_case_event_mutation() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  raise exception 'Case event history is append-only';
+end $$;
+drop trigger if exists signa_case_events_append_only on public.case_events;
+create trigger signa_case_events_append_only
+  before update or delete on public.case_events
+  for each row execute function public.signa_reject_case_event_mutation();
+
 -- All app data is PRIVATE. Browser access is via server APIs only.
 -- RLS is enabled with NO client-facing policies. Default deny on direct Supabase REST.
 alter table public.profiles enable row level security;
