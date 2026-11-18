@@ -7,7 +7,7 @@ import { errorResponse, noStore } from "@/lib/server/responses";
 /** Monitor case list, newest activity first. */
 export async function GET(req: Request) {
   try {
-    await getViewer(req, ["monitor", "coordinator", "admin"]);
+    await getViewer(req, ["monitor", "admin"]);
     const { data, error } = await adminClient()
       .from("incidents")
       .select(

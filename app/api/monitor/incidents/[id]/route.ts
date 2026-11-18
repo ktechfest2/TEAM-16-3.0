@@ -7,7 +7,7 @@ import { errorResponse, noStore } from "@/lib/server/responses";
 /** Full case file: linked reports, recorded reviews, assignment and audit timeline. */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    await getViewer(req, ["monitor", "coordinator", "admin"]);
+    const viewer = await getViewer(req, ["monitor", "coordinator", "admin"]);
     const { id } = await ctx.params;
     if (!isUuid(id))
       return NextResponse.json(
@@ -16,6 +16,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       );
 
     const db = adminClient();
+    if (viewer.role === "coordinator") {
+      const { data: assignment, error: assignmentError } = await db
+        .from("assignments")
+        .select("id")
+        .eq("incident_id", id)
+        .eq("assigned_to", viewer.userId)
+        .maybeSingle();
+      if (assignmentError) throw assignmentError;
+      if (!assignment)
+        return NextResponse.json(
+          { error: { code: "NOT_FOUND", message: "Case not found" } },
+          { status: 404, headers: noStore },
+        );
+    }
     const { data: incident, error } = await db
       .from("incidents")
       .select(
