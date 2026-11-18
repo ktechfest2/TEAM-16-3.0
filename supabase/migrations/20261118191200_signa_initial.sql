@@ -228,7 +228,7 @@ begin
 end $$;
 
 create or replace function public.signa_assign_case(
-  p_actor uuid, p_case_id uuid, p_coordinator uuid
+  p_actor uuid, p_case_id uuid, p_coordinator uuid, p_note text default null
 ) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -249,7 +249,9 @@ begin
     values(p_case_id,p_coordinator,p_actor) returning id into v_assignment;
   update public.incidents set response_state='assigned',updated_at=now() where id=p_case_id;
   insert into public.case_events(incident_id,actor_id,event_type,details)
-    values(p_case_id,p_actor,'assignment_created',jsonb_build_object('assignment_id',v_assignment));
+    values(p_case_id,p_actor,'assignment_created',jsonb_build_object(
+      'assignment_id',v_assignment, 'coordinator_id',p_coordinator,
+      'note',left(coalesce(p_note,''),2000)));
   return v_assignment;
 end $$;
 
@@ -280,7 +282,7 @@ begin
 end $$;
 
 create or replace function public.signa_record_followup(
-  p_actor uuid, p_assignment uuid, p_note text
+  p_actor uuid, p_assignment uuid, p_action text, p_note text
 ) returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -295,11 +297,14 @@ begin
   if v_case is null or (v_owner <> p_actor and v_role is distinct from 'admin') then
     raise exception 'Not authorised';
   end if;
-  if v_at is null or char_length(coalesce(p_note,'')) < 5 then
+  if v_at is null or char_length(coalesce(p_action,'')) < 4 or
+     char_length(coalesce(p_note,'')) > 2000 then
     raise exception 'Acknowledge first and provide an action note';
   end if;
   insert into public.case_events(incident_id,actor_id,event_type,details)
-    values(v_case,p_actor,'followup_recorded',jsonb_build_object('note',left(p_note,2000)));
+    values(v_case,p_actor,'followup_recorded',jsonb_build_object(
+      'action',left(p_action,400), 'note',left(coalesce(p_note,''),2000),
+      'assignment_id',p_assignment));
   update public.incidents set response_state='followup_recorded', updated_at=now() where id=v_case;
   return p_assignment;
 end $$;
@@ -307,21 +312,23 @@ end $$;
 revoke all on function public.signa_new_auth_user() from public, anon, authenticated;
 revoke all on function public.signa_group_reports(uuid,uuid,uuid[],text,text) from public, anon, authenticated;
 revoke all on function public.signa_review_case(uuid,uuid,text,text) from public, anon, authenticated;
-revoke all on function public.signa_assign_case(uuid,uuid,uuid) from public, anon, authenticated;
+revoke all on function public.signa_assign_case(uuid,uuid,uuid,text) from public, anon, authenticated;
 revoke all on function public.signa_acknowledge_case(uuid,uuid,text) from public, anon, authenticated;
-revoke all on function public.signa_record_followup(uuid,uuid,text) from public, anon, authenticated;
+revoke all on function public.signa_record_followup(uuid,uuid,text,text) from public, anon, authenticated;
 grant execute on function public.signa_group_reports(uuid,uuid,uuid[],text,text) to service_role;
 grant execute on function public.signa_review_case(uuid,uuid,text,text) to service_role;
-grant execute on function public.signa_assign_case(uuid,uuid,uuid) to service_role;
+grant execute on function public.signa_assign_case(uuid,uuid,uuid,text) to service_role;
 grant execute on function public.signa_acknowledge_case(uuid,uuid,text) to service_role;
-grant execute on function public.signa_record_followup(uuid,uuid,text) to service_role;
+grant execute on function public.signa_record_followup(uuid,uuid,text,text) to service_role;
 
 -- Fictional polling units for the hackathon, unmistakably labelled.
 insert into public.polling_units(code,name,ward,lga,state,is_simulated)
 values
  ('SIM-PU-001','SIMULATED Polling Unit 001','Fictional Ward A','Fictional LGA','Lagos',true),
  ('SIM-PU-002','SIMULATED Polling Unit 002','Fictional Ward B','Fictional LGA','Lagos',true),
- ('SIM-PU-003','SIMULATED Polling Unit 003','Fictional Ward C','Fictional LGA','Lagos',true)
+ ('SIM-PU-003','SIMULATED Polling Unit 003','Fictional Ward C','Fictional LGA','Lagos',true),
+ ('SIM-PU-004','SIMULATED Polling Unit 004','Fictional Ward D','Fictional LGA','Lagos',true),
+ ('SIM-PU-005','SIMULATED Polling Unit 005','Fictional Ward E','Fictional LGA','Lagos',true)
 on conflict (code) do nothing;
 
 -- After migration, provision monitor/coordinator accounts via a trusted admin process.

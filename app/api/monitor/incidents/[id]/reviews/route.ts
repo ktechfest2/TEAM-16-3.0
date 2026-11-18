@@ -17,43 +17,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     const parsed = parseReview(await req.json().catch(() => null));
     const db = adminClient();
-
-    const { data: incident, error: lookupError } = await db
-      .from("incidents").select("id").eq("id", id).maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!incident)
-      return NextResponse.json(
-        { error: { code: "NOT_FOUND", message: "Case not found" } },
-        { status: 404, headers: noStore },
-      );
-
-    const { data: review, error: reviewError } = await db
-      .from("reviews")
-      .insert({
-        incident_id: id,
-        reviewer_id: viewer.userId,
-        outcome: parsed.outcome,
-        reason: parsed.reason,
-      })
-      .select("id,created_at")
-      .single();
-    if (reviewError) throw reviewError;
-
-    const { error: stateError } = await db
-      .from("incidents")
-      .update({ review_state: parsed.outcome, updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (stateError) throw stateError;
-
-    await db.from("case_events").insert({
-      incident_id: id,
-      actor_id: viewer.userId,
-      event_type: "review_recorded",
-      details: { outcome: parsed.outcome, reason: parsed.reason, reviewId: review.id },
+    const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case", {
+      p_actor: viewer.userId, p_case_id: id, p_outcome: parsed.outcome, p_reason: parsed.reason,
     });
+    if (reviewError) {
+      if (/Unknown case/i.test(reviewError.message))
+        return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
+      if (/locked after assignment/i.test(reviewError.message))
+        return NextResponse.json({ error: { code: "STATE", message: reviewError.message } }, { status: 409, headers: noStore });
+      throw reviewError;
+    }
+    const { data: review, error: lookupError } = await db.from("reviews")
+      .select("id,outcome,created_at").eq("id", reviewId).single();
+    if (lookupError) throw lookupError;
 
     return NextResponse.json(
-      { id: review.id, outcome: parsed.outcome, createdAt: review.created_at },
+      { id: review.id, outcome: review.outcome, createdAt: review.created_at },
       { status: 201, headers: noStore },
     );
   } catch (e) {

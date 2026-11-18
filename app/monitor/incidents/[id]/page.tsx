@@ -243,7 +243,7 @@ export default function IncidentDetailPage() {
           <Card className="p-5 sm:p-6">
             <SectionHeading
               title={`Linked reports (${reports.length})`}
-              description="Each report is an independent witness account. Volume alone never establishes what happened."
+              description="Each item is a separate submission. The system does not establish whether submissions came from different people."
             />
             <Stagger className="mt-5 space-y-3">
               {reports.map((report) => (

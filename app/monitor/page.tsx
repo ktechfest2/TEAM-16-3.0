@@ -27,6 +27,7 @@ type InboxReport = {
   category: string;
   description: string;
   received_at: string;
+  polling_units: { code: string; name: string } | null;
   incident_reports: { incident_id: string }[] | { incident_id: string } | null;
 };
 
@@ -58,6 +59,7 @@ export default function MonitorPage() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("inbox");
   const [query, setQuery] = useState("");
+  const [unitFilter, setUnitFilter] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [grouping, setGrouping] = useState(false);
   const [summary, setSummary] = useState("");
@@ -156,11 +158,13 @@ export default function MonitorPage() {
   const unlinked = reports.filter((report) => !linkedIncidentId(report));
   const needle = query.trim().toLowerCase();
   const visibleReports = (tab === "inbox" ? reports : []).filter((report) => {
+    if (unitFilter && report.polling_unit_id !== unitFilter) return false;
     if (!needle) return true;
     return (
       report.description.toLowerCase().includes(needle) ||
       categoryOf(report.category).label.toLowerCase().includes(needle) ||
-      report.id.includes(needle)
+      report.id.includes(needle) ||
+      report.polling_units?.code.toLowerCase().includes(needle)
     );
   });
   const openCases = cases.filter((item) => item.review_state === "under_review").length;
@@ -229,15 +233,17 @@ export default function MonitorPage() {
         </div>
 
         {tab === "inbox" && (
-          <div className="relative w-full sm:max-w-xs">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-ink" aria-hidden />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search reports"
-              aria-label="Search reports"
-              className="h-11 pl-10"
-            />
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <div className="relative w-full sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-ink" aria-hidden />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search reports" aria-label="Search reports" className="h-11 pl-10" />
+            </div>
+            <select aria-label="Filter by polling unit" value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} className="h-11 rounded-xl border border-[var(--hairline)] bg-white px-3 text-sm text-navy">
+              <option value="">All polling units</option>
+              {[...new Map(reports.map((report) => [report.polling_unit_id, report.polling_units])).entries()].map(([id, unit]) => (
+                <option key={id} value={id}>{unit?.code || "Unknown unit"}</option>
+              ))}
+            </select>
           </div>
         )}
       </div>
@@ -310,6 +316,8 @@ export default function MonitorPage() {
                             <span className="font-mono tracking-wide">{shortRef(report.id)}</span>
                             <span aria-hidden>·</span>
                             <span>{formatRelative(report.received_at)}</span>
+                            <span aria-hidden>·</span>
+                            <span>{report.polling_units?.code || "Unknown polling unit"}</span>
                             {incidentId && (
                               <>
                                 <span aria-hidden>·</span>

@@ -22,55 +22,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const parsed = parseAssignment(await req.json().catch(() => null));
     const db = adminClient();
 
-    const { data: incident, error: lookupError } = await db
-      .from("incidents").select("id,review_state,response_state").eq("id", id).maybeSingle();
-    if (lookupError) throw lookupError;
-    if (!incident)
-      return NextResponse.json(
-        { error: { code: "NOT_FOUND", message: "Case not found" } },
-        { status: 404, headers: noStore },
-      );
-    if (incident.review_state !== "supported")
-      return NextResponse.json(
-        { error: { code: "STATE", message: "Record a supported review before assigning this case" } },
-        { status: 409, headers: noStore },
-      );
-
-    const { data: coordinator, error: roleError } = await db
-      .from("profiles").select("id,role").eq("id", parsed.coordinatorId).maybeSingle();
-    if (roleError) throw roleError;
-    if (!coordinator || coordinator.role !== "coordinator")
-      return NextResponse.json(
-        { error: { code: "INPUT", message: "Target user is not an approved coordinator" } },
-        { status: 400, headers: noStore },
-      );
-
-    const { data: assignment, error: assignError } = await db
-      .from("assignments")
-      .insert({ incident_id: id, assigned_to: parsed.coordinatorId, assigned_by: viewer.userId })
-      .select("id,assigned_at")
-      .single();
+    const { data: assignmentId, error: assignError } = await db.rpc("signa_assign_case", {
+      p_actor: viewer.userId, p_case_id: id, p_coordinator: parsed.coordinatorId, p_note: parsed.note,
+    });
     if (assignError) {
-      if (assignError.code === "23505")
-        return NextResponse.json(
-          { error: { code: "CONFLICT", message: "This case is already assigned" } },
-          { status: 409, headers: noStore },
-        );
+      if (/Only supported cases|already assigned/i.test(assignError.message))
+        return NextResponse.json({ error: { code: "STATE", message: assignError.message } }, { status: 409, headers: noStore });
+      if (/Not authorised/i.test(assignError.message))
+        return NextResponse.json({ error: { code: "ACCESS", message: "Case or coordinator is not authorised" } }, { status: 403, headers: noStore });
       throw assignError;
     }
-
-    const { error: stateError } = await db
-      .from("incidents")
-      .update({ response_state: "assigned", updated_at: new Date().toISOString() })
-      .eq("id", id);
-    if (stateError) throw stateError;
-
-    await db.from("case_events").insert({
-      incident_id: id,
-      actor_id: viewer.userId,
-      event_type: "assignment_created",
-      details: { assignmentId: assignment.id, coordinatorId: parsed.coordinatorId, note: parsed.note },
-    });
+    const { data: assignment, error: lookupError } = await db.from("assignments")
+      .select("id,assigned_at").eq("id", assignmentId).single();
+    if (lookupError) throw lookupError;
 
     return NextResponse.json(
       { id: assignment.id, assignedAt: assignment.assigned_at },
