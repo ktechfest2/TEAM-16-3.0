@@ -3,7 +3,7 @@
 begin;
 
 create table if not exists public.signa_rate_limits (
-  scope text not null check (scope in ('report','evidence')),
+  scope text not null check (scope in ('report','evidence','voice','ai')),
   key_hash text not null check (key_hash ~ '^[0-9a-f]{64}$'),
   window_started_at timestamptz not null,
   hit_count integer not null check (hit_count > 0),
@@ -24,7 +24,7 @@ declare
   v_window timestamptz;
   v_hits integer;
 begin
-  if p_scope is null or p_scope not in ('report','evidence') or
+  if p_scope is null or p_scope not in ('report','evidence','voice','ai') or
      p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' or
      p_limit is null or p_limit < 1 or p_limit > 1000 or
      p_window_seconds is null or p_window_seconds < 30 or p_window_seconds > 86400 then
@@ -49,10 +49,13 @@ revoke all on function public.signa_consume_rate_limit(text,text,integer,integer
 grant execute on function public.signa_consume_rate_limit(text,text,integer,integer) to service_role;
 
 alter table public.evidence
-  add column if not exists upload_status text not null default 'ready';
+  add column if not exists upload_status text not null default 'ready',
+  add column if not exists upload_token uuid,
+  add column if not exists upload_lease_expires_at timestamptz,
+  add column if not exists cleanup_token uuid;
 create index if not exists evidence_pending_cleanup_idx
   on public.evidence(upload_status, received_at)
-  where upload_status in ('pending','failed');
+  where upload_status in ('pending','failed','uploading');
 
 do $$
 begin
@@ -63,7 +66,7 @@ begin
   ) then
     alter table public.evidence
       add constraint evidence_upload_status_check
-      check (upload_status in ('pending','ready','failed'));
+      check (upload_status in ('pending','uploading','ready','failed','cleaning'));
   end if;
 end $$;
 
@@ -78,10 +81,9 @@ alter table public.review_evidence enable row level security;
 revoke all on table public.review_evidence from public, anon, authenticated;
 grant all on table public.review_evidence to service_role;
 
--- Retire the old signature so all review actions pass through evidence validation.
-drop function if exists public.signa_review_case(uuid,uuid,text,text);
-
-create function public.signa_review_case(
+-- Add the evidence-aware RPC under a new name. Keeping the hardened four-arg
+-- function avoids breaking existing deployments during rolling app releases.
+create function public.signa_review_case_with_evidence(
   p_actor uuid,
   p_case_id uuid,
   p_outcome text,
@@ -148,7 +150,7 @@ begin
   return v_review_id;
 end $$;
 
-revoke all on function public.signa_review_case(uuid,uuid,text,text,uuid[]) from public, anon, authenticated;
-grant execute on function public.signa_review_case(uuid,uuid,text,text,uuid[]) to service_role;
+revoke all on function public.signa_review_case_with_evidence(uuid,uuid,text,text,uuid[]) from public, anon, authenticated;
+grant execute on function public.signa_review_case_with_evidence(uuid,uuid,text,text,uuid[]) to service_role;
 
 commit;

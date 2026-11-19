@@ -17,13 +17,15 @@ export type EvidenceUploadResponse = {
 export type EvidenceListResponse = { evidence: EvidenceItem[] };
 export type EvidenceAccessResponse = { signedUrl: string; expiresAt: string };
 
-export const MAX_EVIDENCE_BYTES = 5 * 1024 * 1024;
+// Vercel Functions cap the complete request body at 4.5 MiB. Reserve room for
+// multipart headers and boundaries so a maximum-size image remains deployable.
+export const MAX_EVIDENCE_BYTES = 4 * 1024 * 1024;
 export type EvidenceMime = EvidenceItem["mimeType"];
 const allowedTypes = new Set<EvidenceMime>(["image/jpeg", "image/png", "image/webp"]);
 
 export function validateEvidenceBytes(declaredType: string, bytes: Uint8Array): EvidenceMime {
   if (!Number.isSafeInteger(bytes.byteLength) || bytes.byteLength < 1 || bytes.byteLength > MAX_EVIDENCE_BYTES)
-    throw new InputError("Evidence file must be between 1 byte and 5 MB");
+    throw new InputError("Evidence file must be between 1 byte and 4 MB");
 
   const detected = detectEvidenceMime(bytes);
   if (!allowedTypes.has(declaredType as EvidenceMime) || detected !== declaredType)

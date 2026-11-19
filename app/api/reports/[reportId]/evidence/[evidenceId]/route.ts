@@ -38,6 +38,8 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ reportId: st
   } catch (error) {
     if (error instanceof Error && error.message === "EVIDENCE_ALREADY_READY")
       return NextResponse.json({ error: { code: "STATE", message: "Received evidence cannot be removed by this endpoint" } }, { status: 409, headers: noStore });
+    if (error instanceof Error && error.message === "EVIDENCE_UPLOAD_IN_PROGRESS")
+      return NextResponse.json({ error: { code: "IN_PROGRESS", message: "This upload is active or being cleaned up" } }, { status: 409, headers: noStore });
     return errorResponse(error);
   }
 }

@@ -4,20 +4,21 @@ import { isIP } from "node:net";
 import { DependencyUnavailableError, RequestLimitedError } from "./responses";
 import { adminClient } from "./supabase";
 
-type Limit = { scope: "report" | "evidence"; reporterMax: number; ipMax: number; windowSeconds: number };
+type Limit = { scope: "report" | "evidence" | "voice" | "ai"; reporterMax: number; ipMax: number; windowSeconds: number };
 
 /**
  * Durable fixed-window counters in Postgres. Only HMAC-derived identifiers are
  * persisted; raw reporter IDs and client IPs are never written or logged.
  * Limits fail closed when the database migration/service is unavailable.
  */
-export async function enforceAbuseLimit(req: Request, reporterId: string, limit: Limit): Promise<void> {
+export async function enforceAbuseLimit(req: Request, reporterId: string | null, limit: Limit): Promise<void> {
   const hmacSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!hmacSecret) throw new DependencyUnavailableError("Abuse controls are unavailable");
 
   const ip = trustedClientIp(req);
+  if (!reporterId && !ip) throw new DependencyUnavailableError("Abuse controls are unavailable");
   const checks = [
-    consume(limit.scope, `reporter:${reporterId}`, hmacSecret, limit.reporterMax, limit.windowSeconds),
+    ...(reporterId ? [consume(limit.scope, `reporter:${reporterId}`, hmacSecret, limit.reporterMax, limit.windowSeconds)] : []),
     ...(ip ? [consume(limit.scope, `network:${ip}`, hmacSecret, limit.ipMax, limit.windowSeconds)] : []),
   ];
   const results = await Promise.all(checks);

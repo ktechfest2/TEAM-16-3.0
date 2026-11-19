@@ -17,7 +17,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     const parsed = parseReview(await req.json().catch(() => null));
     const db = adminClient();
-    const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case", {
+    const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case_with_evidence", {
       p_actor: viewer.userId, p_case_id: id, p_outcome: parsed.outcome, p_reason: parsed.reason,
       p_evidence_ids: parsed.evidenceIds,
     });

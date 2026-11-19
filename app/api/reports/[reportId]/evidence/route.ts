@@ -35,7 +35,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ reportId: stri
     const contentLength = Number(req.headers.get("content-length"));
     // Bound multipart overhead as well as the file itself before parsing the body.
     if (Number.isFinite(contentLength) && contentLength > MAX_EVIDENCE_BYTES + 64 * 1024)
-      return NextResponse.json({ error: { code: "TOO_LARGE", message: "Evidence images cannot exceed 5 MB" } }, { status: 413, headers: noStore });
+      return NextResponse.json({ error: { code: "TOO_LARGE", message: "Evidence images cannot exceed 4 MB" } }, { status: 413, headers: noStore });
 
     const evidenceId = req.headers.get("idempotency-key") || "";
     if (!isUuid(evidenceId)) return inputError("Idempotency-Key must be a UUID");
@@ -43,7 +43,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ reportId: stri
     const file = form?.get("file");
     if (!(file instanceof File)) return inputError("Attach one image in the file field");
     if (file.size > MAX_EVIDENCE_BYTES)
-      return NextResponse.json({ error: { code: "TOO_LARGE", message: "Evidence images cannot exceed 5 MB" } }, { status: 413, headers: noStore });
+      return NextResponse.json({ error: { code: "TOO_LARGE", message: "Evidence images cannot exceed 4 MB" } }, { status: 413, headers: noStore });
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     let mimeType;
@@ -61,6 +61,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ reportId: stri
   } catch (error) {
     if (error instanceof Error && error.message === "EVIDENCE_ID_CONFLICT")
       return NextResponse.json({ error: { code: "CONFLICT", message: "This evidence ID is already used for a different upload" } }, { status: 409, headers: noStore });
+    if (error instanceof Error && error.message === "EVIDENCE_UPLOAD_IN_PROGRESS")
+      return NextResponse.json({ error: { code: "IN_PROGRESS", message: "This evidence upload is already being processed; retry shortly" } }, { status: 409, headers: { ...noStore, "Retry-After": "30" } });
     return errorResponse(error);
   }
 }
