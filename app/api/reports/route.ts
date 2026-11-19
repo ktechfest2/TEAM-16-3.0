@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     const { data: created, error: insertError } = await db.from("reports").insert({
       id: parsed.id, reporter_id: viewer.userId, polling_unit_id: parsed.pollingUnitId,
       category: parsed.category, description: parsed.description, occurred_at: parsed.occurredAt,
-      client_created_at: parsed.clientCreatedAt, payload_sha256: hash,
+      client_created_at: parsed.clientCreatedAt, ai_processing_consent: parsed.aiProcessingConsent, payload_sha256: hash,
     }).select("id,received_at").single();
     if (!insertError) return NextResponse.json({ id: created!.id, receivedAt: created!.received_at, delivery: "received", duplicate: false }, { status: 201, headers: noStore });
     if (insertError.code !== "23505") throw insertError;
