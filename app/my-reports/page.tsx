@@ -12,11 +12,18 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/signa/shell";
 import { PageHeader, SectionHeading } from "@/components/signa/page-header";
 import { SafetyNotice } from "@/components/signa/safety-notice";
-import { CategoryGlyph, DeliveryChip } from "@/components/signa/status-chip";
+import { CategoryGlyph, DeliveryChip, ResponseChip, ReviewChip } from "@/components/signa/status-chip";
 import { Reveal, Stagger, StaggerItem } from "@/components/signa/motion";
 import { formatDateTime, formatRelative, shortRef } from "@/lib/utils";
+import type { ResponseState, ReviewState } from "@/lib/taxonomy";
 
-type ServerReport = { id: string; category: string; description: string; received_at: string };
+type ServerReport = {
+  id: string;
+  category: string;
+  description: string;
+  received_at: string;
+  caseStatus: { reviewState: ReviewState; responseState: ResponseState } | null;
+};
 
 export default function MyReports() {
   const [reports, setReports] = useState<ServerReport[]>([]);
@@ -163,11 +170,41 @@ export default function MyReports() {
                         <p className="text-[15px] font-semibold text-navy">
                           {categoryOf(report.category).label}
                         </p>
-                        <DeliveryChip state="received" size="sm" />
                       </div>
                       <p className="mt-2 line-clamp-4 text-[13.5px] leading-relaxed text-slate-ink/85">
                         {report.description}
                       </p>
+                      <div className="mt-4 grid gap-3 border-t border-[var(--hairline)] pt-3 sm:grid-cols-3">
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Delivery
+                          </p>
+                          <DeliveryChip state="received" size="sm" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Verification
+                          </p>
+                          {report.caseStatus ? (
+                            <ReviewChip state={report.caseStatus.reviewState} size="sm" />
+                          ) : (
+                            <span className="text-[12px] text-muted-ink">Not in a case yet</span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Response
+                          </p>
+                          {report.caseStatus ? (
+                            <ResponseChip state={report.caseStatus.responseState} size="sm" />
+                          ) : (
+                            <span className="text-[12px] text-muted-ink">No case response status</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-ink sm:col-span-3">
+                          Response updates reflect internal coordination only; they do not mean emergency responders were dispatched.
+                        </p>
+                      </div>
                       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-ink">
                         <span className="font-mono tracking-wide">{shortRef(report.id)}</span>
                         <span aria-hidden>·</span>
