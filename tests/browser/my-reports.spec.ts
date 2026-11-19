@@ -98,7 +98,7 @@ async function respondToReports(context: BrowserContext, handler: (route: Route)
 async function seedQueuedReport(page: Page, reporterId: string | null, id: string, description: string) {
   await page.evaluate(async ({ reporterId, id, description, pollingUnitId }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("signa-offline-v1", 2);
+      const request = indexedDB.open("signa-offline-v1", 4);
       request.onerror = () => reject(request.error);
       request.onupgradeneeded = () => {
         const db = request.result;
@@ -113,7 +113,9 @@ async function seedQueuedReport(page: Page, reporterId: string | null, id: strin
         const db = request.result;
         const transaction = db.transaction("reports", "readwrite");
         transaction.objectStore("reports").put({
-          reporterId,
+          storageVersion: 2,
+          ownerUserId: reporterId,
+          ownershipState: reporterId ? "owned" : "unowned",
           queuedAt: "2026-11-18T12:00:00.000Z",
           state: "pending",
           payload: {
@@ -134,7 +136,7 @@ async function seedQueuedReport(page: Page, reporterId: string | null, id: strin
 
 async function countQueued(page: Page): Promise<number> {
   return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const request = indexedDB.open("signa-offline-v1", 2);
+    const request = indexedDB.open("signa-offline-v1", 4);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
@@ -264,7 +266,7 @@ test("retry submits only the current reporter's queued items and preserves the o
     if (route.request().method() === "POST") {
       const body = route.request().postDataJSON() as { id: string };
       submittedIds.push(body.id);
-      await route.fulfill({ status: 200, json: { receipt: { received: true } } });
+      await route.fulfill({ status: 200, json: { id: body.id, delivery: "received", receivedAt: "2026-11-19T12:00:00.000Z", duplicate: false } });
       return;
     }
     await route.fulfill({ json: { reports: [] } });
@@ -308,6 +310,7 @@ test("first-time offline drafts stay saved but remain hidden on a signed-out sha
   });
 
   await page.goto("/report");
+  await expect(page.getByLabel("Polling unit")).toContainText("FIC-001");
   await context.setOffline(true);
   await page.getByLabel("Polling unit").selectOption(POLLING_UNIT);
   await page.getByRole("button", { name: /Disruption/i }).first().click();

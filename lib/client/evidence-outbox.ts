@@ -1,6 +1,7 @@
 "use client";
 
-import { citizenSupabase, getCitizenSession } from "./supabase";
+import { citizenSupabase, getCitizenSession } from "./supabase.ts";
+import { openOfflineDatabase } from "./offline-database.ts";
 
 export type EvidenceUploadState = "waiting_for_report" | "pending" | "uploading" | "failed" | "received";
 
@@ -17,22 +18,9 @@ export type QueuedEvidence = {
   error?: string;
 };
 
-const DB = "signa-offline-v1";
 const STORE = "evidence";
 
-function openEvidenceDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB, 2);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains("reports"))
-        request.result.createObjectStore("reports", { keyPath: "payload.id" });
-      if (!request.result.objectStoreNames.contains(STORE))
-        request.result.createObjectStore(STORE, { keyPath: "evidenceId" });
-    };
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-  });
-}
+const openEvidenceDb = openOfflineDatabase;
 
 export async function queueEvidence(records: QueuedEvidence[]): Promise<void> {
   if (!records.length) return;

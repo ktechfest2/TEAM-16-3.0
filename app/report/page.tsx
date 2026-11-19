@@ -71,12 +71,19 @@ export default function ReportPage() {
   }, []);
 
   useEffect(() => {
-    const lastUnit = localStorage.getItem("signa:last-polling-unit");
-    if (lastUnit) setUnitId(lastUnit);
-    const cached = localStorage.getItem("signa-units");
-    if (cached) { try { setUnits(JSON.parse(cached)); } catch {} }
+    try {
+      const lastUnit = localStorage.getItem("signa:last-polling-unit");
+      if (lastUnit) setUnitId(lastUnit);
+      const cached = localStorage.getItem("signa-units");
+      if (cached) { try { setUnits(JSON.parse(cached)); } catch {} }
+    } catch {
+      // These values are convenience caches; reporting must still work if localStorage is blocked.
+    }
     void fetch("/api/polling-units").then(r=>r.json()).then(data=>{
-      if (Array.isArray(data.units)) { setUnits(data.units); localStorage.setItem("signa-units", JSON.stringify(data.units)); }
+      if (Array.isArray(data.units)) {
+        setUnits(data.units);
+        try { localStorage.setItem("signa-units", JSON.stringify(data.units)); } catch {}
+      }
     }).catch(()=>{});
     let unsubscribe: (() => void) | undefined;
     try {
@@ -95,10 +102,16 @@ export default function ReportPage() {
     setOnline(navigator.onLine);
     const onOnline = () => { setOnline(true); void sync(); };
     const onOffline = () => setOnline(false);
+    const onCameraCancel = () => setEvidenceError("Camera closed before a photo was selected. You can submit the report without a photo.");
+    const onGalleryCancel = () => setEvidenceError("Photo picker closed before a photo was selected. You can submit the report without a photo.");
+    cameraInput.current?.addEventListener("cancel", onCameraCancel);
+    galleryInput.current?.addEventListener("cancel", onGalleryCancel);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     return () => {
       unsubscribe?.();
+      cameraInput.current?.removeEventListener("cancel", onCameraCancel);
+      galleryInput.current?.removeEventListener("cancel", onGalleryCancel);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
@@ -110,19 +123,24 @@ export default function ReportPage() {
       const { data: { session: initialSession } } = await getCitizenSession();
       const result = await flushQueued();
       const { data: { session: currentSession } } = await getCitizenSession();
-      if (generation !== syncGeneration.current || (currentSession?.user.id ?? null) !== (initialSession?.user.id ?? null)) {
+      if ((currentSession?.user.id ?? null) !== (initialSession?.user.id ?? null)) {
         await refreshPending();
         return;
       }
       await refreshPending();
-      if (currentSession?.user.id && currentSession.access_token) {
-        const evidenceResult = await flushQueuedEvidence(currentSession.user.id, currentSession.access_token);
-        if (evidenceResult.errors.length) setEvidenceError(evidenceResult.errors.join("; "));
-        else if (evidenceResult.received.length) setEvidenceError("");
-      }
-      await refreshEvidence();
       if (result.delivered.length) setNotice(`${result.delivered.length} report(s) received by the server.`);
       if (result.errors.length) setError(result.errors.join("; "));
+      if (generation !== syncGeneration.current) return;
+      if (currentSession?.user.id && currentSession.access_token) {
+        void flushQueuedEvidence(currentSession.user.id, currentSession.access_token)
+          .then((evidenceResult) => {
+            if (evidenceResult.errors.length) setEvidenceError(evidenceResult.errors.join("; "));
+            else if (evidenceResult.received.length) setEvidenceError("");
+            return refreshEvidence();
+          })
+          .catch(() => setEvidenceError("Photo upload could not be checked. The report remains saved."));
+      }
+      void refreshEvidence();
     } catch { setError("Could not check pending reports. They remain saved locally."); }
   }
 
@@ -147,28 +165,32 @@ export default function ReportPage() {
       } catch {
         // Offline reports without a session remain unassigned and are never shown to another reporter.
       }
+      const photosToSave = selectedPhotos.length && !photosForReportId ? selectedPhotos : [];
       await queueReport(payload, reporterId);
-      if (selectedPhotos.length && !photosForReportId) {
+      if (photosToSave.length) {
         setPhotosForReportId(payload.id);
         setPhotosForReporterId(reporterId);
-        try {
-          await queueEvidence(selectedPhotos.map(({ evidenceId, file }) => ({
-            evidenceId,
-            reportId: payload.id,
-            reporterId,
-            file,
-            fileName: file.name || "photo",
-            mimeType: file.type,
-            byteSize: file.size,
-            state: "waiting_for_report" as const,
-          })));
-          setSelectedPhotos([]);
-          setPhotosForReportId(null);
-          setPhotosForReporterId(null);
-          setEvidenceError("");
-        } catch {
-          setEvidenceError("The alert was saved, but this browser could not save the selected photo for retry. Keep this page open and try again.");
-        }
+        void queueEvidence(photosToSave.map(({ evidenceId, file }) => ({
+          evidenceId,
+          reportId: payload.id,
+          reporterId,
+          file,
+          fileName: file.name || "photo",
+          mimeType: file.type,
+          byteSize: file.size,
+          state: "waiting_for_report" as const,
+        })))
+          .then(() => {
+            setSelectedPhotos([]);
+            setPhotosForReportId(null);
+            setPhotosForReporterId(null);
+            setEvidenceError("");
+            void refreshEvidence();
+            if (navigator.onLine) void sync();
+          })
+          .catch(() => {
+            setEvidenceError("The alert was saved, but this browser could not save the selected photo for retry. Keep this page open and try again.");
+          });
       }
       setDescription("");
       setFictionalTest(false);
@@ -177,8 +199,8 @@ export default function ReportPage() {
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
         : `Saved on this device (${payload.id.slice(0, 8)}), but no reporter session was available. This draft cannot be linked or synced automatically; keep this browser private and do not clear its data. NOT delivered.`);
       await refreshPending();
-      await refreshEvidence();
-      if (navigator.onLine) await sync();
+      void refreshEvidence();
+      if (navigator.onLine) void sync();
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
     finally { submitting.current = false; setBusy(false); }
   }
@@ -281,7 +303,13 @@ export default function ReportPage() {
               htmlFor="unit"
               help="Confirm this unit before submitting. The current list is fictional test data."
             >
-              <Select id="unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value); else localStorage.removeItem("signa:last-polling-unit"); }}>
+              <Select id="unit" value={unitId} onChange={(e) => {
+                setUnitId(e.target.value);
+                try {
+                  if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value);
+                  else localStorage.removeItem("signa:last-polling-unit");
+                } catch {}
+              }}>
                 <option value="">Select simulated polling unit</option>
                 {units.map((u) => (
                   <option key={u.id} value={u.id}>

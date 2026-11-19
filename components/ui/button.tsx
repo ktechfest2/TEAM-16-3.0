@@ -6,30 +6,30 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[12px] font-semibold tracking-[-0.01em] transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] select-none disabled:pointer-events-none disabled:opacity-50 active:translate-y-[0.5px] [&_svg]:shrink-0",
+  "relative inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[10px] font-semibold tracking-[-0.01em] transition-colors duration-150 ease-out select-none disabled:pointer-events-none disabled:opacity-55 active:translate-y-px [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         primary:
-          "bg-midnight text-white shadow-[0_1px_2px_rgba(11,18,32,0.18),0_8px_24px_rgba(11,18,32,0.14)] hover:bg-navy hover:shadow-[0_2px_6px_rgba(11,18,32,0.2),0_14px_34px_rgba(11,18,32,0.18)]",
+          "bg-signal text-white shadow-xs hover:bg-[#1E4DBA] hover:shadow-sm",
         signal:
-          "bg-signal text-white shadow-[0_8px_24px_rgba(37,99,235,0.24)] hover:brightness-[1.07] hover:shadow-[0_12px_32px_rgba(37,99,235,0.3)]",
+          "bg-signal text-white shadow-xs hover:bg-[#1E4DBA] hover:shadow-sm",
         alert:
-          "bg-alert text-white shadow-[0_8px_24px_rgba(220,38,38,0.24)] hover:brightness-[1.06]",
+          "bg-incident text-white hover:bg-[#972E35]",
         secondary:
-          "bg-white text-navy ring-1 ring-inset ring-[var(--hairline-strong)] shadow-xs hover:bg-canvas hover:ring-[rgba(15,23,42,0.2)]",
-        ghost: "text-slate-ink hover:bg-[rgba(15,23,42,0.05)] hover:text-navy",
-        subtle: "bg-[rgba(15,23,42,0.045)] text-navy hover:bg-[rgba(15,23,42,0.08)]",
+          "bg-white text-ink ring-1 ring-inset ring-[var(--hairline-strong)] hover:bg-paper hover:ring-[#9EADA6]",
+        ghost: "text-muted hover:bg-[#E6ECE8] hover:text-ink",
+        subtle: "bg-[#E8EEEA] text-ink hover:bg-[#DCE5E0]",
         link: "text-signal underline-offset-4 hover:underline px-0",
         onDark:
-          "bg-white/10 text-white ring-1 ring-inset ring-white/20 backdrop-blur hover:bg-white/16",
+          "bg-white/10 text-white ring-1 ring-inset ring-white/25 hover:bg-white/15",
       },
       size: {
-        sm: "h-9 px-3.5 text-[13px] [&_svg]:size-4",
+        sm: "h-10 px-3.5 text-[13px] [&_svg]:size-4",
         md: "h-11 px-5 text-sm [&_svg]:size-4",
         lg: "h-12 px-6 text-[15px] [&_svg]:size-[18px]",
         xl: "h-14 px-7 text-base [&_svg]:size-5",
-        icon: "size-10 [&_svg]:size-[18px]",
+        icon: "size-11 [&_svg]:size-[18px]",
       },
       full: { true: "w-full", false: "" },
     },
