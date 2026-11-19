@@ -19,9 +19,8 @@ export async function POST(req: Request) {
     const legacyHash = createHash("sha256").update(legacyCanonicalPayload(parsed)).digest("hex");
     const db = adminClient();
     const { data: unit, error: unitError } = await db.from("polling_units")
-      .select("id").eq("id", parsed.pollingUnitId).eq("is_simulated", true).maybeSingle();
+      .select("id,is_simulated").eq("id", parsed.pollingUnitId).maybeSingle();
     if (unitError) throw unitError;
-    if (!unit) return NextResponse.json({ error: { code: "UNIT", message: "Unknown polling unit" } }, { status: 400, headers: noStore });
 
     // Successful retries bypass rate counters; a repeated id with changed body
     // remains a conflict and never creates another receipt.
@@ -34,9 +33,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ id: prior.id, receivedAt: prior.received_at, delivery: "received", duplicate: true }, { headers: noStore });
     }
 
+    if (!unit || unit.is_simulated && !approvedFictionalReporter(viewer.userId)) return NextResponse.json({ error: { code: "UNIT", message: "Polling unit unavailable for this reporter session" } }, { status: 400, headers: noStore });
+
     await enforceAbuseLimit(req, viewer.userId, { scope: "report", reporterMax: 30, ipMax: 120, windowSeconds: 600 });
 
-    const aiEligible = parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true && approvedFictionalReporter(viewer.userId);
+    const aiEligible = unit.is_simulated && parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true && approvedFictionalReporter(viewer.userId);
     const { data: created, error: insertError } = await db.from("reports").insert({
       id: parsed.id, reporter_id: viewer.userId, polling_unit_id: parsed.pollingUnitId,
       category: parsed.category, description: parsed.description, occurred_at: parsed.occurredAt,

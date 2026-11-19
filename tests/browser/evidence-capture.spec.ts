@@ -26,7 +26,18 @@ async function installSession(page: Page) {
 }
 
 async function fakePollingUnit(context: BrowserContext) {
-  await context.route("**/api/polling-units", route => route.fulfill({ json: { units: [{ id: UNIT_ID, code: "SIM-PU-001", name: "SIMULATED Polling Unit 001", is_simulated: true }] } }));
+  await context.route("**/api/directory?**", route => {
+    const level = new URL(route.request().url()).searchParams.get("level");
+    const items = level === "states" ? [{ code: "01", name: "ABIA" }] : level === "lgas" ? [{ code: "01", name: "ABA NORTH" }] : level === "wards" ? [{ code: "01", name: "EZIAMA" }] : [{ id: UNIT_ID, code: "01/01/01/001", name: "RAILWAY QUARTERS I", is_simulated: false }];
+    return route.fulfill({ json: { items } });
+  });
+}
+
+async function selectUnit(page: Page) {
+  await page.getByLabel("State or FCT", { exact: true }).selectOption("01");
+  await page.getByLabel("LGA", { exact: true }).selectOption("01");
+  await page.getByLabel("Ward", { exact: true }).selectOption("01");
+  await page.getByLabel("Polling unit", { exact: true }).selectOption(UNIT_ID);
 }
 
 test("fictional photo upload follows report receipt", async ({ page, context }) => {
@@ -54,7 +65,7 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
     const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
     expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
   }
-  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await selectUnit(page);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await page.getByText(/Add details or photo \(optional\)/).click();
   await page.getByLabel("More details (optional)").fill("Fictional observation for the photo workflow.");
@@ -105,7 +116,7 @@ test("offline report stays saved and only its own receipt confirms on reconnecti
     await new Promise<void>((resolve, reject) => { const tx = db.transaction("reports", "readwrite"); tx.objectStore("reports").put({ reporterId, queuedAt: new Date().toISOString(), state: "pending", payload: { id, pollingUnitId: unitId, category: "disruption", description: "Other fictional queue item", occurredAt: null, clientCreatedAt: new Date().toISOString() } }); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
     db.close();
   }, { id: otherId, unitId: UNIT_ID, reporterId: REPORTER_ID });
-  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await selectUnit(page);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await context.setOffline(true);
   await page.getByRole("button", { name: "Submit alert" }).click();
@@ -123,7 +134,7 @@ test("reporter session change hides the previous receipt", async ({ page, contex
   await fakePollingUnit(context);
   await context.route("**/api/reports", route => { const id = (route.request().postDataJSON() as { id: string }).id; return route.fulfill({ status: 201, json: { id, delivery: "received", receivedAt: new Date().toISOString() } }); });
   await page.goto("/report");
-  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await selectUnit(page);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await page.getByRole("button", { name: "Submit alert" }).click();
   await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
@@ -140,7 +151,7 @@ test("failed photo upload leaves the confirmed report receipt intact", async ({ 
   });
   await context.route("**/api/reports/*/evidence", route => route.fulfill({ status: 503, json: { error: { message: "Upload unavailable" } } }));
   await page.goto("/report");
-  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await selectUnit(page);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await page.getByText(/Add details or photo \(optional\)/).click();
   await page.getByLabel("Choose photos from gallery").setInputFiles({ name: "fictional.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]) });

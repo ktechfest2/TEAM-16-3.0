@@ -255,9 +255,9 @@ test("retry submits only the current reporter's queued items and preserves the o
     await route.fulfill({ status: 400, json: { error: "fixture unavailable" } });
   });
   let pollingUnitCalls = 0;
-  await context.route("**/api/polling-units", async route => {
+  await context.route("**/api/directory?**", async route => {
     pollingUnitCalls += 1;
-    await route.fulfill({ json: { units: [] } });
+    await route.fulfill({ json: { items: [] } });
   });
   const submittedIds: string[] = [];
   await context.route("**/api/reports", async route => {
@@ -299,9 +299,11 @@ test("first-time offline drafts stay saved but remain hidden on a signed-out sha
     reportReads += 1;
     await route.fulfill({ json: { reports: [] } });
   });
-  await context.route("**/api/polling-units", async route => await route.fulfill({
-    json: { units: [{ id: POLLING_UNIT, code: "FIC-001", name: "Fictional Unit", is_simulated: true }] },
-  }));
+  await context.route("**/api/directory?**", async route => {
+    const level = new URL(route.request().url()).searchParams.get("level");
+    const items = level === "states" ? [{ code: "01", name: "ABIA" }] : level === "lgas" ? [{ code: "01", name: "ABA NORTH" }] : level === "wards" ? [{ code: "01", name: "EZIAMA" }] : [{ id: POLLING_UNIT, code: "01/01/01/001", name: "RAILWAY QUARTERS I", is_simulated: false }];
+    await route.fulfill({ json: { items } });
+  });
   await context.route("**/api/reports", async route => {
     if (route.request().method() === "POST") reportPosts += 1;
     await route.fulfill({ status: 200, json: { receipt: { received: true } } });
@@ -309,7 +311,10 @@ test("first-time offline drafts stay saved but remain hidden on a signed-out sha
 
   await page.goto("/report");
   await context.setOffline(true);
-  await page.getByLabel("Polling unit").selectOption(POLLING_UNIT);
+  await page.getByLabel("State or FCT", { exact: true }).selectOption("01");
+  await page.getByLabel("LGA", { exact: true }).selectOption("01");
+  await page.getByLabel("Ward", { exact: true }).selectOption("01");
+  await page.getByLabel("Polling unit", { exact: true }).selectOption(POLLING_UNIT);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await page.getByText(/Add details or photo \(optional\)/).click();
   await page.getByLabel("More details (optional)").fill("Fictional first-time offline report contains private detail.");

@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   try {
     await getViewer(req, ["monitor", "admin"]);
     const { data, error } = await adminClient().from("reports")
-      .select("id,polling_unit_id,category,description,received_at,polling_units(code,name),incident_reports(incident_id)")
+      .select("id,polling_unit_id,category,description,received_at,polling_units(code,name,state,lga,ward),incident_reports(incident_id)")
       .order("received_at", { ascending: false }).limit(50);
     if (error) throw error;
     const ids = (data || []).map((report) => report.id);

@@ -21,8 +21,9 @@ import type { DeliveryState } from "@/lib/taxonomy";
 import { AnimatePresence, Reveal, motion } from "@/components/signa/motion";
 import { cn, shortRef } from "@/lib/utils";
 import { MAX_EVIDENCE_BYTES } from "@/lib/evidence-contract";
+import { DirectoryPicker } from "@/components/signa/directory-picker";
 
-type Unit = { id: string; code: string; name: string; is_simulated: boolean };
+type Unit = { id: string; code: string; name: string; is_simulated: boolean; state?: string; lga?: string; ward?: string };
 type SelectedPhoto = { evidenceId: string; file: File };
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -74,13 +75,8 @@ export default function ReportPage() {
   }, []);
 
   useEffect(() => {
-    const lastUnit = localStorage.getItem("signa:last-polling-unit");
-    if (lastUnit) setUnitId(lastUnit);
-    const cached = localStorage.getItem("signa-units");
-    if (cached) { try { setUnits(JSON.parse(cached)); } catch {} }
-    void fetch("/api/polling-units").then(r=>r.json()).then(data=>{
-      if (Array.isArray(data.units)) { setUnits(data.units); localStorage.setItem("signa-units", JSON.stringify(data.units)); }
-    }).catch(()=>{});
+    const cached = localStorage.getItem("signa:last-confirmed-unit");
+    if (cached) { try { const unit = JSON.parse(cached) as Unit; if (!unit.is_simulated && unit.id) { setUnits([unit]); setUnitId(unit.id); } } catch {} }
     let unsubscribe: (() => void) | undefined;
     try {
       const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange((_event, session) => {
@@ -293,20 +289,7 @@ export default function ReportPage() {
         <Card className="p-4 sm:p-5">
           <StepLabel index={1} title="Where did it happen?" />
           <div className="mt-4">
-            <Field
-              label="Polling unit"
-              htmlFor="unit"
-              help="Confirm this unit before submitting. The current list is fictional test data."
-            >
-              <Select id="unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value); else localStorage.removeItem("signa:last-polling-unit"); }}>
-                <option value="">Select simulated polling unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code} — {u.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <DirectoryPicker selected={selectedUnit ?? null} onSelect={(unit) => { setUnitId(unit?.id ?? ""); setUnits(unit ? [unit] : []); if (unit) localStorage.setItem("signa:last-confirmed-unit", JSON.stringify(unit)); else localStorage.removeItem("signa:last-confirmed-unit"); }} />
             <AnimatePresence>
               {selectedUnit && (
                 <motion.p

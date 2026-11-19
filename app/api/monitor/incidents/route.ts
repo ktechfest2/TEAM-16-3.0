@@ -12,7 +12,7 @@ export async function GET(req: Request) {
       .from("incidents")
       .select(
         "id,summary,review_state,response_state,created_at,updated_at,polling_unit_id,created_by," +
-          "polling_units(code,name,ward,lga),incident_reports(report_id,reports(category,reporter_id))",
+          "polling_units(code,name,ward,lga,state),incident_reports(report_id,reports(category,reporter_id))",
       )
       .order("updated_at", { ascending: false })
       .limit(50);
