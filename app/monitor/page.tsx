@@ -29,6 +29,7 @@ type InboxReport = {
   received_at: string;
   polling_units: { code: string; name: string } | null;
   incident_reports: { incident_id: string }[] | { incident_id: string } | null;
+  aiAssessment?: { status: string; provisional_summary: string | null } | null;
 };
 
 type CaseRow = {
@@ -310,7 +311,14 @@ export default function MonitorPage() {
                             )}
                           </div>
                           <p className="mt-2 line-clamp-3 text-[13.5px] leading-relaxed text-slate-ink/85">
-                            {report.description}
+                            {report.description || "No additional witness context supplied."}
+                          </p>
+                          <p className="mt-2 text-[12px] leading-relaxed text-slate-ink/75">
+                            {report.aiAssessment?.status === "completed"
+                              ? `AI observation · provisional: ${report.aiAssessment.provisional_summary || "Summary unavailable"}`
+                              : report.aiAssessment?.status === "retryable"
+                                ? "AI observation unavailable · reviewer may retry"
+                                : "AI observation pending or not requested · human review required"}
                           </p>
                           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-ink">
                             <span className="font-mono tracking-wide">{shortRef(report.id)}</span>
