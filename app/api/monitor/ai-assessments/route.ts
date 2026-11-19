@@ -18,7 +18,8 @@ export async function POST(req: Request) {
     const db = adminClient();
     const { data: report, error } = await db.from("reports").select("id,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(code,is_simulated)").eq("id", reportId).maybeSingle();
     if (error) throw error;
-    if (!report || !report.ai_processing_consent || !(report.polling_units as { is_simulated: boolean }).is_simulated) return NextResponse.json({ error: { code: "NOT_ELIGIBLE", message: "AI observations require reporter consent and a fictional polling unit" } }, { status: 403, headers: noStore });
+    const unit = report && (Array.isArray(report.polling_units) ? report.polling_units[0] : report.polling_units) as { is_simulated?: boolean } | null;
+    if (!report || !report.ai_processing_consent || unit?.is_simulated !== true) return NextResponse.json({ error: { code: "NOT_ELIGIBLE", message: "AI observations require reporter consent and a fictional polling unit" } }, { status: 403, headers: noStore });
 
     const { data: evidence, error: evidenceError } = await db.from("evidence").select("id,mime_type,storage_path").eq("report_id", reportId).eq("upload_status", "ready");
     if (evidenceError) throw evidenceError;

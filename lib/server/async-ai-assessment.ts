@@ -8,7 +8,8 @@ export async function runConsentAssessment(reportId: string): Promise<void> {
   const { data: report, error } = await db.from("reports")
     .select("id,reporter_id,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(is_simulated)")
     .eq("id", reportId).maybeSingle();
-  if (error || !report || !report.ai_processing_consent || !(report.polling_units as { is_simulated: boolean }).is_simulated) return;
+  const unit = report && (Array.isArray(report.polling_units) ? report.polling_units[0] : report.polling_units) as { is_simulated?: boolean } | null;
+  if (error || !report || !report.ai_processing_consent || unit?.is_simulated !== true) return;
 
   const { data: evidence } = await db.from("evidence").select("id,mime_type,storage_path")
     .eq("report_id", reportId).eq("upload_status", "ready").limit(2);
