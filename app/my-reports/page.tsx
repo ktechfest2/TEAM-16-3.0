@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Inbox, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { browserSupabase, bearerHeaders } from "@/lib/client/supabase";
@@ -25,34 +25,92 @@ type ServerReport = {
   caseStatus: { reviewState: ReviewState; responseState: ResponseState } | null;
 };
 
+const NO_SESSION_NOTICE = "No active online session. Saved offline reports appear here after you reconnect and submit.";
+
 export default function MyReports() {
   const [reports, setReports] = useState<ServerReport[]>([]);
   const [queued, setQueued] = useState<QueuedReport[]>([]);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
+  const requestGeneration = useRef(0);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
-  async function load() {
+  const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
+    setReports([]);
+    setNotice("");
     try {
-      setQueued(await listQueued());
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const queuedReports = await listQueued();
+      if (generation !== requestGeneration.current) return;
+      setQueued(queuedReports);
+      const supabase = browserSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (generation !== requestGeneration.current) return;
       if (!session) {
-        setNotice("No active online session. Saved offline reports appear here after you reconnect and submit.");
+        setNotice(NO_SESSION_NOTICE);
         return;
       }
+      const reporterId = session.user.id;
       const headers = await bearerHeaders();
       const r = await fetch("/api/reports/mine", { headers, cache: "no-store" });
       if (!r.ok) throw new Error("Unable to load server reports");
-      setReports((await r.json()).reports || []);
+      const payload = await r.json() as { reports?: ServerReport[] };
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (generation !== requestGeneration.current) return;
+      if (currentSession?.user.id !== reporterId) {
+        requestGeneration.current += 1;
+        setReports([]);
+        setNotice(currentSession ? "" : NO_SESSION_NOTICE);
+        if (currentSession) window.setTimeout(() => void loadRef.current(), 0);
+        return;
+      }
+      setReports(Array.isArray(payload.reports) ? payload.reports : []);
       setNotice("");
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Unable to load reports");
+      if (generation === requestGeneration.current) {
+        setReports([]);
+        setNotice(e instanceof Error ? e.message : "Unable to load reports");
+      }
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
-  }
+  }, []);
+  loadRef.current = load;
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let observedReporterId: string | null | undefined;
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const supabase = browserSupabase();
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const nextReporterId = session?.user.id ?? null;
+        if (observedReporterId === undefined) {
+          observedReporterId = nextReporterId;
+          return;
+        }
+        if (nextReporterId === observedReporterId && _event !== "SIGNED_OUT") return;
+
+        observedReporterId = nextReporterId;
+        requestGeneration.current += 1;
+        setReports([]);
+        setLoading(false);
+        if (nextReporterId) {
+          setNotice("");
+          // Supabase auth callbacks should stay synchronous; start the read after it returns.
+          window.setTimeout(() => void loadRef.current(), 0);
+        } else {
+          setNotice(NO_SESSION_NOTICE);
+        }
+      });
+      unsubscribe = () => subscription.unsubscribe();
+    } catch {
+      // `load` reports incomplete browser configuration without leaking stale rows.
+    }
+
+    void load();
+    return () => unsubscribe?.();
+  }, [load]);
 
   const total = reports.length + queued.length;
 
