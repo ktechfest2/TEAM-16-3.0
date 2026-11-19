@@ -38,12 +38,13 @@ async function trans<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore
 export async function queueReport(payload: ReportPayload, reporterId: string | null) {
   await trans("readwrite", store => store.put({ payload, reporterId, queuedAt: new Date().toISOString(), state: "pending" }));
 }
-export async function listQueued(): Promise<QueuedReport[]> { return await trans("readonly", store => store.getAll()) as QueuedReport[]; }
+async function listQueued(): Promise<QueuedReport[]> { return await trans("readonly", store => store.getAll()) as QueuedReport[]; }
 export async function listQueuedForReporter(reporterId: string | null): Promise<QueuedReport[]> {
+  // Ownerless drafts may contain sensitive descriptions. A signed-out browser
+  // cannot establish who owns them, so never return their contents to a view.
+  if (!reporterId) return [];
   const records = await listQueued();
-  return reporterId
-    ? records.filter(record => record.reporterId === reporterId)
-    : records.filter(record => !record.reporterId);
+  return records.filter(record => record.reporterId === reporterId);
 }
 export async function removeQueued(id: string) { await trans("readwrite", store => store.delete(id)); }
 export async function flushQueued(): Promise<{ delivered: string[]; pending: number; errors: string[] }> {

@@ -284,28 +284,48 @@ test("retry submits only the current reporter's queued items and preserves the o
   expect(await countQueued(page)).toBe(2);
 });
 
-test("unowned offline reports remain saved without being attached to a new session", async ({ page, context }) => {
+test("first-time offline drafts stay saved but remain hidden on a signed-out shared device", async ({ page, context }) => {
   let anonymousSignInRequests = 0;
   let reportPosts = 0;
+  let reportReads = 0;
   await context.route("https://fixture.supabase.co/**", async route => {
     if (route.request().url().includes("grant_type=anonymous")) anonymousSignInRequests += 1;
     await route.fulfill({ status: 400, json: { error: "fixture_auth_unavailable" } });
   });
-  await context.route("**/api/reports/mine", async route => await route.fulfill({ json: { reports: [] } }));
-  await context.route("**/api/polling-units", async route => await route.fulfill({ json: { units: [] } }));
+  await context.route("**/api/reports/mine", async route => {
+    reportReads += 1;
+    await route.fulfill({ json: { reports: [] } });
+  });
+  await context.route("**/api/polling-units", async route => await route.fulfill({
+    json: { units: [{ id: POLLING_UNIT, code: "FIC-001", name: "Fictional Unit", is_simulated: true }] },
+  }));
   await context.route("**/api/reports", async route => {
     if (route.request().method() === "POST") reportPosts += 1;
     await route.fulfill({ status: 200, json: { receipt: { received: true } } });
   });
 
-  await page.goto("/my-reports");
-  await seedQueuedReport(page, null, "00000000-0000-4000-8000-000000000321", "Fictional unowned offline item.");
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await expect(page.getByText("Fictional unowned offline item.")).toBeVisible();
   await page.goto("/report");
-  await expect(page.getByText("1 report waiting on this device")).toBeVisible();
+  await context.setOffline(true);
+  await page.getByLabel("Polling unit").selectOption(POLLING_UNIT);
+  await page.getByLabel("Your account").fill("Fictional first-time offline report contains private detail.");
+  await page.getByRole("button", { name: "Accessible option — save alert now" }).click();
+  await expect(page.getByRole("status")).toContainText(/cannot be linked or synced automatically/i);
+  expect(await countQueued(page)).toBe(1);
+
+  await context.setOffline(false);
+  await page.getByRole("link", { name: /track this report/i }).click();
+  await expect(page.getByText(/No active online session/i)).toBeVisible();
+  await expect(page.getByText(/No recovery is available yet/i)).toBeVisible();
+  await expect(page.getByText("Fictional first-time offline report contains private detail.")).toHaveCount(0);
+  await expect(page.getByText("0", { exact: true }).first()).toBeVisible();
+
+  await page.goto("/report");
+  await expect(page.getByText(/cannot be linked or delivered automatically/i)).toBeVisible();
   await page.getByRole("button", { name: "Sync now" }).click();
-  await expect(page.getByText(/have no reporter session/i)).toBeVisible();
+  await switchSessionInBrowser(page, sessionFor(REPORTER_B));
+  await page.goto("/my-reports");
+  await expect.poll(() => reportReads).toBeGreaterThan(0);
+  await expect(page.getByText("Fictional first-time offline report contains private detail.")).toHaveCount(0);
   expect(await countQueued(page)).toBe(1);
   expect(anonymousSignInRequests).toBe(0);
   expect(reportPosts).toBe(0);
