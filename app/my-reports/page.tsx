@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Inbox, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import { browserSupabase, bearerHeaders } from "@/lib/client/supabase";
-import { listQueued, type QueuedReport } from "@/lib/client/outbox";
+import { browserSupabase } from "@/lib/client/supabase";
+import { listQueuedForReporter, type QueuedReport } from "@/lib/client/outbox";
 import { category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,40 +12,111 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/signa/shell";
 import { PageHeader, SectionHeading } from "@/components/signa/page-header";
 import { SafetyNotice } from "@/components/signa/safety-notice";
-import { CategoryGlyph, DeliveryChip } from "@/components/signa/status-chip";
+import { CategoryGlyph, DeliveryChip, ResponseChip, ReviewChip } from "@/components/signa/status-chip";
 import { Reveal, Stagger, StaggerItem } from "@/components/signa/motion";
 import { formatDateTime, formatRelative, shortRef } from "@/lib/utils";
+import type { ResponseState, ReviewState } from "@/lib/taxonomy";
 
-type ServerReport = { id: string; category: string; description: string; received_at: string };
+type ServerReport = {
+  id: string;
+  category: string;
+  description: string;
+  received_at: string;
+  caseStatus: { reviewState: ReviewState; responseState: ResponseState } | null;
+};
+
+const NO_SESSION_NOTICE = "No active online session. Saved offline reports appear here after you reconnect and submit.";
 
 export default function MyReports() {
   const [reports, setReports] = useState<ServerReport[]>([]);
   const [queued, setQueued] = useState<QueuedReport[]>([]);
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
+  const requestGeneration = useRef(0);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
-  async function load() {
+  const load = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
+    setReports([]);
+    setQueued([]);
+    setNotice("");
     try {
-      setQueued(await listQueued());
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const supabase = browserSupabase();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (generation !== requestGeneration.current) return;
+      const reporterId = session?.user.id ?? null;
+      const queuedReports = await listQueuedForReporter(reporterId);
+      if (generation !== requestGeneration.current) return;
+      setQueued(queuedReports);
       if (!session) {
-        setNotice("No active online session. Saved offline reports appear here after you reconnect and submit.");
+        setNotice(NO_SESSION_NOTICE);
         return;
       }
-      const headers = await bearerHeaders();
-      const r = await fetch("/api/reports/mine", { headers, cache: "no-store" });
+      const r = await fetch("/api/reports/mine", {
+        headers: { authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      });
       if (!r.ok) throw new Error("Unable to load server reports");
-      setReports((await r.json()).reports || []);
+      const payload = await r.json() as { reports?: ServerReport[] };
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (generation !== requestGeneration.current) return;
+      if ((currentSession?.user.id ?? null) !== reporterId) {
+        requestGeneration.current += 1;
+        setReports([]);
+        setQueued([]);
+        setNotice(currentSession ? "" : NO_SESSION_NOTICE);
+        setLoading(false);
+        if (currentSession) window.setTimeout(() => void loadRef.current(), 0);
+        return;
+      }
+      setReports(Array.isArray(payload.reports) ? payload.reports : []);
       setNotice("");
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : "Unable to load reports");
+      if (generation === requestGeneration.current) {
+        setReports([]);
+        setNotice(e instanceof Error ? e.message : "Unable to load reports");
+      }
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current) setLoading(false);
     }
-  }
+  }, []);
+  loadRef.current = load;
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let observedReporterId: string | null | undefined;
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const supabase = browserSupabase();
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const nextReporterId = session?.user.id ?? null;
+        if (observedReporterId === undefined) {
+          observedReporterId = nextReporterId;
+          return;
+        }
+        if (nextReporterId === observedReporterId && _event !== "SIGNED_OUT") return;
+
+        observedReporterId = nextReporterId;
+        requestGeneration.current += 1;
+        setReports([]);
+        setQueued([]);
+        setLoading(false);
+        if (nextReporterId) {
+          setNotice("");
+          // Supabase auth callbacks should stay synchronous; start the read after it returns.
+          window.setTimeout(() => void loadRef.current(), 0);
+        } else {
+          setNotice(NO_SESSION_NOTICE);
+        }
+      });
+      unsubscribe = () => subscription.unsubscribe();
+    } catch {
+      // `load` reports incomplete browser configuration without leaking stale rows.
+    }
+
+    void load();
+    return () => unsubscribe?.();
+  }, [load]);
 
   const total = reports.length + queued.length;
 
@@ -163,11 +234,41 @@ export default function MyReports() {
                         <p className="text-[15px] font-semibold text-navy">
                           {categoryOf(report.category).label}
                         </p>
-                        <DeliveryChip state="received" size="sm" />
                       </div>
                       <p className="mt-2 line-clamp-4 text-[13.5px] leading-relaxed text-slate-ink/85">
                         {report.description}
                       </p>
+                      <div className="mt-4 grid gap-3 border-t border-[var(--hairline)] pt-3 sm:grid-cols-3">
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Delivery
+                          </p>
+                          <DeliveryChip state="received" size="sm" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Verification
+                          </p>
+                          {report.caseStatus ? (
+                            <ReviewChip state={report.caseStatus.reviewState} size="sm" />
+                          ) : (
+                            <span className="text-[12px] text-muted-ink">Not in a case yet</span>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-ink">
+                            Response
+                          </p>
+                          {report.caseStatus ? (
+                            <ResponseChip state={report.caseStatus.responseState} size="sm" />
+                          ) : (
+                            <span className="text-[12px] text-muted-ink">No case response status</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-muted-ink sm:col-span-3">
+                          Response updates reflect internal coordination only; they do not mean emergency responders were dispatched.
+                        </p>
+                      </div>
                       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-ink">
                         <span className="font-mono tracking-wide">{shortRef(report.id)}</span>
                         <span aria-hidden>·</span>
