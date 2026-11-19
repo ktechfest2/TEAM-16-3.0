@@ -273,9 +273,9 @@ export default function IncidentDetailPage() {
         <p role="alert" className="mt-4 text-[13.5px] text-alert">{error}</p>
       )}
 
-      <div className="mt-8 grid gap-5 lg:grid-cols-[1.45fr_1fr] lg:items-start">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:items-start">
         {/* ---------- Left: evidence + actions ---------- */}
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Card className="p-5 sm:p-6">
             <SectionHeading
               title={`Linked reports (${reports.length})`}
@@ -496,7 +496,7 @@ export default function IncidentDetailPage() {
         </div>
 
         {/* ---------- Right: history ---------- */}
-        <div className="space-y-5 lg:sticky lg:top-24">
+        <div className="min-w-0 space-y-5 lg:sticky lg:top-24">
           <Card className="p-5 sm:p-6">
             <SectionHeading title="Case timeline" description="Append-only record of every decision." />
             <div className="mt-6">

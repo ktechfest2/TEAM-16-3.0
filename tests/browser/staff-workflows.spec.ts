@@ -122,8 +122,14 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await expect(page.getByText("AI assessment", { exact: true })).toBeVisible();
   for (const width of [320, 375, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
-    expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+    const dimensions = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      document: document.documentElement.scrollWidth,
+      overflow: [...document.querySelectorAll<HTMLElement>("body *")]
+        .filter((element) => element.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .slice(0, 5).map((element) => `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 80)}`),
+    }));
+    expect(dimensions.document, `Overflowing elements at ${width}px: ${dimensions.overflow.join(", ")}`).toBeLessThanOrEqual(dimensions.viewport);
   }
   await page.getByRole("button", { name: "View privately" }).click();
   await expect(page.getByRole("img", { name: /Private evidence for report/ })).toBeVisible();
@@ -150,11 +156,11 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await expect(page.getByText("Fictional accreditation pause")).toBeVisible();
   await page.getByRole("button", { name: "Acknowledge", exact: true }).click();
   await page.getByRole("button", { name: "Confirm receipt" }).click();
-  await expect(page.getByText(/Acknowledged/)).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Acknowledgement recorded" })).toBeVisible();
   await page.getByRole("button", { name: "Record follow-up" }).click();
   await page.getByLabel("Action taken").fill("Reviewed with internal monitoring desk");
   await page.getByRole("button", { name: "Save to case timeline" }).click();
-  await expect(page.getByText("Follow-up recorded", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Follow-up recorded" })).toBeVisible();
 });
 
 test("a denied staff API keeps the workspace restricted and reports the server decision", async ({ page, context }) => {
