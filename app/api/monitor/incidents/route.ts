@@ -7,17 +7,25 @@ import { errorResponse, noStore } from "@/lib/server/responses";
 /** Monitor case list, newest activity first. */
 export async function GET(req: Request) {
   try {
-    await getViewer(req, ["monitor", "admin"]);
+    const viewer = await getViewer(req, ["monitor", "admin"]);
     const { data, error } = await adminClient()
       .from("incidents")
       .select(
-        "id,summary,review_state,response_state,created_at,updated_at,polling_unit_id," +
-          "polling_units(code,name,ward,lga),incident_reports(report_id,reports(category))",
+        "id,summary,review_state,response_state,created_at,updated_at,polling_unit_id,created_by," +
+          "polling_units(code,name,ward,lga),incident_reports(report_id,reports(category,reporter_id))",
       )
       .order("updated_at", { ascending: false })
       .limit(50);
     if (error) throw error;
-    return NextResponse.json({ incidents: data }, { headers: noStore });
+    type Row = { created_by: string; review_state: string; incident_reports: { report_id: string; reports: { category: string; reporter_id: string } | { category: string; reporter_id: string }[] | null }[]; [key: string]: unknown };
+    return NextResponse.json({ incidents: ((data || []) as unknown as Row[]).map(({ created_by, incident_reports, ...row }) => ({
+      ...row,
+      canReview: created_by !== viewer.userId && !incident_reports.some((link) => {
+        const reports = link.reports ? (Array.isArray(link.reports) ? link.reports : [link.reports]) : [];
+        return reports.some((report) => report.reporter_id === viewer.userId);
+      }),
+      incident_reports: incident_reports.map((link) => ({ report_id: link.report_id, reports: link.reports ? (Array.isArray(link.reports) ? link.reports.map((report) => ({ category: report.category })) : { category: link.reports.category }) : null })),
+    })) }, { headers: noStore });
   } catch (e) {
     return errorResponse(e);
   }

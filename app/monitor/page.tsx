@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight, FolderPlus, Inbox, LayoutDashboard, LogOut, RefreshCw, Search, ShieldAlert,
 } from "lucide-react";
@@ -29,6 +30,7 @@ type InboxReport = {
   received_at: string;
   polling_units: { code: string; name: string } | null;
   incident_reports: { incident_id: string }[] | { incident_id: string } | null;
+  aiAssessment?: { status: string; provisional_summary: string | null } | null;
 };
 
 type CaseRow = {
@@ -39,6 +41,7 @@ type CaseRow = {
   updated_at: string;
   polling_units: { code: string; name: string; ward: string | null; lga: string | null } | null;
   incident_reports: { report_id: string; reports: { category: string } | null }[];
+  canReview?: boolean;
 };
 
 type Tab = "inbox" | "cases";
@@ -51,6 +54,7 @@ function linkedIncidentId(report: InboxReport): string | null {
 }
 
 export default function MonitorPage() {
+  const router = useRouter();
   const [access, setAccess] = useState(false);
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -118,8 +122,7 @@ export default function MonitorPage() {
       setSelected([]);
       setSummary("");
       setReason("");
-      await load();
-      window.location.href = `/monitor/incidents/${created.id}`;
+      router.push(`/monitor/incidents/${created.id}`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not group these reports");
     } finally {
@@ -142,7 +145,7 @@ export default function MonitorPage() {
     return (
       <PageShell>
         <StaffGate
-          title="Monitor workspace"
+          title="Incident Review"
           description="Review incoming reports, group related observations into a case and record a written review outcome."
           onSignedIn={load}
         />
@@ -168,6 +171,7 @@ export default function MonitorPage() {
     );
   });
   const openCases = cases.filter((item) => item.review_state === "under_review").length;
+  const independentQueue = cases.filter((item) => item.review_state === "under_review" && item.canReview);
   const awaitingResponse = cases.filter(
     (item) => item.review_state === "supported" && item.response_state === "unassigned",
   ).length;
@@ -176,7 +180,7 @@ export default function MonitorPage() {
     <PageShell width="wide" className="pb-16">
       <Reveal>
         <PageHeader
-          eyebrow={<><LayoutDashboard className="size-3.5" aria-hidden /> Monitor workspace</>}
+          eyebrow={<><LayoutDashboard className="size-3.5" aria-hidden /> Incident Review</>}
           title="Review inbox"
           description="Incoming reports are unverified allegations. A case exists only when a monitor groups reports and records a written review."
           actions={
@@ -255,6 +259,7 @@ export default function MonitorPage() {
       {/* ---------- Inbox ---------- */}
       {tab === "inbox" && (
         <div className="mt-5">
+          {independentQueue.length > 0 && <section className="mb-4 rounded-2xl bg-warn-soft p-4" aria-label="Cases awaiting independent review"><h2 className="text-sm font-semibold text-navy">Awaiting independent review</h2><p className="mt-1 text-xs text-slate-ink">These grouped cases need a decision from an authorized reviewer who did not create or report them.</p><div className="mt-2 flex flex-wrap gap-2">{independentQueue.map((item) => <Link key={item.id} href={`/monitor/incidents/${item.id}`} className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-signal underline underline-offset-2">{item.summary}</Link>)}</div></section>}
           {loading && reports.length === 0 ? (
             <div className="grid gap-3 lg:grid-cols-2">
               <SkeletonCard />
@@ -310,7 +315,14 @@ export default function MonitorPage() {
                             )}
                           </div>
                           <p className="mt-2 line-clamp-3 text-[13.5px] leading-relaxed text-slate-ink/85">
-                            {report.description}
+                            {report.description || "No additional witness context supplied."}
+                          </p>
+                          <p className="mt-2 text-[12px] leading-relaxed text-slate-ink/75">
+                            {report.aiAssessment?.status === "completed"
+                              ? `AI observation · provisional: ${report.aiAssessment.provisional_summary || "Summary unavailable"}`
+                              : report.aiAssessment?.status === "retryable"
+                                ? "AI observation unavailable · reviewer may retry"
+                                : "AI observation pending or not requested · human review required"}
                           </p>
                           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-ink">
                             <span className="font-mono tracking-wide">{shortRef(report.id)}</span>

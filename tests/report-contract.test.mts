@@ -19,11 +19,19 @@ test("rejects unknown categories and malformed identifiers", () => {
 });
 test("rejects dangerous or invalid report body shapes", () => {
   assert.throws(()=>parseReport(null),InputError);
-  assert.throws(()=>parseReport({...base, description:"x"}),InputError);
+  assert.equal(parseReport({...base, description:""}).description, "");
+  assert.equal(parseReport({...base, description:undefined}).description, "");
+  assert.throws(()=>parseReport({...base, description:"x".repeat(1601)}),InputError);
   assert.throws(()=>parseReport({...base, occurredAt:"not-date"}),InputError);
 });
 test("same client UUID with edited text has a distinct canonical payload", () => {
   assert.notEqual(canonicalPayload(parseReport(base)), canonicalPayload(parseReport({...base,description:"Edited observation"})));
+});
+test("fictional test marker changes the retry payload without changing legacy reports", () => {
+  const unmarked = parseReport({...base, aiProcessingConsent: true});
+  const marked = parseReport({...base, aiProcessingConsent: true, fictionalTestSubmission: true});
+  assert.equal(unmarked.fictionalTestSubmission, undefined);
+  assert.notEqual(canonicalPayload(marked), canonicalPayload(unmarked));
 });
 test("duplicate receipt only for same owner and same hash", () => {
   const rec={reporter_id:"user1",payload_sha256:"a"};

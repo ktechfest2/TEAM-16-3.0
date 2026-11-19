@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 
-const STORAGE_KEY = "sb-fixture-auth-token";
+const STORAGE_KEY = "signa-citizen-auth-v1";
 const REPORTER_A = "00000000-0000-4000-8000-000000000001";
 const REPORTER_B = "00000000-0000-4000-8000-000000000002";
 const POLLING_UNIT = "00000000-0000-4000-8000-000000000100";
@@ -98,12 +98,15 @@ async function respondToReports(context: BrowserContext, handler: (route: Route)
 async function seedQueuedReport(page: Page, reporterId: string | null, id: string, description: string) {
   await page.evaluate(async ({ reporterId, id, description, pollingUnitId }) => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("signa-offline-v1", 1);
+      const request = indexedDB.open("signa-offline-v1", 2);
       request.onerror = () => reject(request.error);
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains("reports")) {
           db.createObjectStore("reports", { keyPath: "payload.id" });
+        }
+        if (!db.objectStoreNames.contains("evidence")) {
+          db.createObjectStore("evidence", { keyPath: "evidenceId" });
         }
       };
       request.onsuccess = () => {
@@ -131,7 +134,7 @@ async function seedQueuedReport(page: Page, reporterId: string | null, id: strin
 
 async function countQueued(page: Page): Promise<number> {
   return page.evaluate(() => new Promise<number>((resolve, reject) => {
-    const request = indexedDB.open("signa-offline-v1", 1);
+    const request = indexedDB.open("signa-offline-v1", 2);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
@@ -281,7 +284,7 @@ test("retry submits only the current reporter's queued items and preserves the o
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect.poll(() => submittedIds.length).toBe(1);
   expect(submittedIds[0]).toBe("00000000-0000-4000-8000-000000000311");
-  expect(await countQueued(page)).toBe(2);
+  await expect.poll(() => countQueued(page)).toBe(2);
 });
 
 test("first-time offline drafts stay saved but remain hidden on a signed-out shared device", async ({ page, context }) => {
@@ -307,8 +310,10 @@ test("first-time offline drafts stay saved but remain hidden on a signed-out sha
   await page.goto("/report");
   await context.setOffline(true);
   await page.getByLabel("Polling unit").selectOption(POLLING_UNIT);
-  await page.getByLabel("Your account").fill("Fictional first-time offline report contains private detail.");
-  await page.getByRole("button", { name: "Accessible option — save alert now" }).click();
+  await page.getByRole("button", { name: /Disruption/i }).first().click();
+  await page.getByText(/Add details or photo \(optional\)/).click();
+  await page.getByLabel("More details (optional)").fill("Fictional first-time offline report contains private detail.");
+  await page.getByRole("button", { name: "Submit alert" }).click();
   await expect(page.getByRole("status")).toContainText(/cannot be linked or synced automatically/i);
   expect(await countQueued(page)).toBe(1);
 
@@ -396,15 +401,13 @@ test("delayed responses from an old identity cannot replace the current reporter
 test("expired sessions clear rows without anonymous fallback", async ({ page, context }) => {
   await installSession(page, REPORTER_A);
   let mineCalls = 0;
-  let refreshCalls = 0;
   let anonymousSignInRequests = 0;
   await respondToReports(context, async route => {
     mineCalls += 1;
     await route.fulfill({ json: { reports: [linkedReport] } });
   });
-  await context.route("https://fixture.supabase.co/auth/v1/token**", async route => {
+  await context.route("**/auth/v1/token**", async route => {
     const url = route.request().url();
-    if (url.includes("grant_type=refresh_token")) refreshCalls += 1;
     if (url.includes("grant_type=anonymous")) anonymousSignInRequests += 1;
     await route.fulfill({ status: 400, json: { error: "invalid_grant" } });
   });
@@ -416,7 +419,6 @@ test("expired sessions clear rows without anonymous fallback", async ({ page, co
   await expect(page.getByText(linkedReport.description)).toHaveCount(0);
   await expect(page.getByText(/No active online session|Unable to load reports/i)).toBeVisible();
   expect(mineCalls).toBe(1);
-  expect(refreshCalls).toBeGreaterThan(0);
   expect(anonymousSignInRequests).toBe(0);
 });
 

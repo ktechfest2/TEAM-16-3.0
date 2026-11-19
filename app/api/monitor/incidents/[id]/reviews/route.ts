@@ -17,8 +17,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       );
     const parsed = parseReview(await req.json().catch(() => null));
     const db = adminClient();
-    const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case", {
+    const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case_with_evidence", {
       p_actor: viewer.userId, p_case_id: id, p_outcome: parsed.outcome, p_reason: parsed.reason,
+      p_evidence_ids: parsed.evidenceIds,
     });
     if (reviewError) {
       if (/Reviewer cannot verify/i.test(reviewError.message))
@@ -30,14 +31,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
       if (/locked after assignment/i.test(reviewError.message))
         return NextResponse.json({ error: { code: "STATE", message: reviewError.message } }, { status: 409, headers: noStore });
+      if (/evidence reference|too many evidence/i.test(reviewError.message))
+        return NextResponse.json(
+          { error: { code: "EVIDENCE_REFERENCE", message: "Each evidence reference must belong to this case and be available" } },
+          { status: 400, headers: noStore },
+        );
       throw reviewError;
     }
     const { data: review, error: lookupError } = await db.from("reviews")
-      .select("id,outcome,created_at").eq("id", reviewId).single();
+      .select("id,outcome,created_at,review_evidence(evidence_id)").eq("id", reviewId).single();
     if (lookupError) throw lookupError;
 
     return NextResponse.json(
-      { id: review.id, outcome: review.outcome, createdAt: review.created_at },
+      {
+        id: review.id,
+        outcome: review.outcome,
+        createdAt: review.created_at,
+        evidenceIds: (review.review_evidence || []).map((link: { evidence_id: string }) => link.evidence_id),
+      },
       { status: 201, headers: noStore },
     );
   } catch (e) {
