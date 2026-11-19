@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { noStore } from "@/lib/server/responses";
+import { noStore, RequestLimitedError } from "@/lib/server/responses";
+import { enforceAbuseLimit } from "@/lib/server/rate-limit";
+import { adminClient } from "@/lib/server/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,18 +14,12 @@ const replies: Record<string, string> = {
   ha: "Zan iya amsa tambayoyi na gaba game da Signa. Idan babu sahihin bayani na jama'a, babu bayani. Wannan ba yana nufin wurin yana da aminci ba.",
   ig: "Enwere m ike ịza ajụjụ izugbe gbasara Signa. Ọ bụrụ na enweghị ozi ọha akwadoro, ozi adịghị. Nke a apụtaghị na ebe ahụ dị nchebe.",
 };
-const recentRequests = new Map<string, { count: number; resetAt: number }>();
-function rateLimited(key: string) {
-  const now = Date.now();
-  const entry = recentRequests.get(key);
-  if (!entry || entry.resetAt <= now) { recentRequests.set(key, { count: 1, resetAt: now + 60_000 }); return false; }
-  if (entry.count >= 5) return true;
-  entry.count += 1; return false;
-}
-
 export async function POST(req: Request) {
-  const client = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (rateLimited(client)) return NextResponse.json({ error: "Too many voice requests" }, { status: 429, headers: noStore });
+  try { await enforceAbuseLimit(req, "browser-voice", { scope: "voice", reporterMax: 10, ipMax: 20, windowSeconds: 600 }); }
+  catch (error) {
+    const limited = error instanceof RequestLimitedError;
+    return NextResponse.json({ error: limited ? "Too many voice requests" : "Voice service is temporarily unavailable" }, { status: limited ? 429 : 503, headers: noStore });
+  }
   const contentLength = Number(req.headers.get("content-length") || 0);
   if (contentLength > 5_500_000) return NextResponse.json({ error: "Audio request is too large" }, { status: 413, headers: noStore });
   const apiKey = process.env.INTRON_API_KEY;
@@ -57,7 +53,18 @@ export async function POST(req: Request) {
   } catch { return NextResponse.json({ error: "Speech recognition timed out or failed" }, { status: 502, headers: noStore }); }
   const transcript = String(stt.transcript ?? stt.transcription ?? stt.text ?? "").trim().slice(0, 4000);
   if (!transcript) return NextResponse.json({ error: "No speech was recognized" }, { status: 422, headers: noStore });
-  const replyText = replies[String(language)];
+  const code = transcript.match(/\b[A-Z0-9][A-Z0-9-]{1,31}\b/i)?.[0]?.toUpperCase();
+  let replyText: string;
+  if (!code) replyText = replies[String(language)];
+  else {
+    const { data, error } = await adminClient().from("public_safe_updates").select("polling_unit_code,summary,public_date")
+      .eq("polling_unit_code", code).eq("approved", true).lte("public_date", new Date().toISOString().slice(0, 10))
+      .order("public_date", { ascending: false }).limit(3);
+    if (error) return NextResponse.json({ error: "Approved public information is temporarily unavailable" }, { status: 503, headers: noStore });
+    replyText = data?.length
+      ? data.map((row) => `${row.polling_unit_code}, ${row.public_date}: ${row.summary}`).join(". ")
+      : `Information is unavailable for polling unit ${code}. This does not mean the location is safe.`;
+  }
   const ttsResponse = await fetch("https://infer.voice.intron.io/tts/v1/generate", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ text: replyText, voice_language: language, voice_accent: ({ en: "english", pcm: "pidgin", yo: "yoruba", ha: "hausa", ig: "igbo" } as Record<string, string>)[String(language)], voice_gender: "female", output_audio_format: "wav" }), signal: AbortSignal.timeout(30_000),

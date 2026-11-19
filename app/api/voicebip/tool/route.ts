@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { adminClient } from "@/lib/server/supabase";
+import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,12 +17,13 @@ export async function POST(req: Request) {
   const a = Buffer.from(expected, "hex"); const b = Buffer.from(normalized, "hex");
   if (a.length !== b.length || !timingSafeEqual(a, b)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
+    await enforceAbuseLimit(req, "voicebip-tool", { scope: "voice", reporterMax: 60, ipMax: 120, windowSeconds: 600 });
     const body = JSON.parse(raw);
-    const event = body.event_type ?? body.type;
-    const name = body.tool_name ?? body.data?.tool_name ?? body.name;
-    const args = body.arguments ?? body.data?.arguments ?? {};
-    if (event && event !== "tool.invocation") return NextResponse.json({ error: "unsupported_event" }, { status: 400 });
-    if (name && name !== "get_public_incident_updates") return NextResponse.json({ result: "That enquiry is not available through this Signa tool." });
+    const event = body.event_type;
+    const name = body.tool_name;
+    const args = body.arguments;
+    if (event !== "tool.invocation" || name !== "get_public_incident_updates" || !args || typeof args !== "object")
+      return NextResponse.json({ error: "unsupported_invocation" }, { status: 400 });
     const code = typeof args.polling_unit_code === "string" ? args.polling_unit_code.trim().slice(0, 32) : "";
     if (!/^[A-Za-z0-9-]{2,32}$/.test(code)) return NextResponse.json({ error: "invalid_polling_unit" }, { status: 400 });
     const { data, error } = await adminClient().from("public_safe_updates")

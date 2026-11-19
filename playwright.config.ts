@@ -20,7 +20,7 @@ export default defineConfig({
     screenshot: "off",
   },
   webServer: {
-    command: "npm run dev -- --port 3210",
+    command: "npm run dev -- --webpack --port 3210",
     url: `${baseURL}/my-reports`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -30,6 +30,7 @@ export default defineConfig({
       SUPABASE_SECRET_KEY: "fixture_server_key_only",
       SUPABASE_SERVICE_ROLE_KEY: "fixture_server_key_only",
       NEXT_TELEMETRY_DISABLED: "1",
+      SIGNA_NEXT_DIST_DIR: ".next-e2e",
     },
   },
 });

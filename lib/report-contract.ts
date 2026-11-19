@@ -57,8 +57,13 @@ export function canonicalPayload(payload: ReportPayload): string {
   ]);
 }
 
+/** Hash shape used before consent was added; preserves queued/offline report retries. */
+export function legacyCanonicalPayload(payload: ReportPayload): string {
+  return JSON.stringify([payload.pollingUnitId, payload.category, payload.description, payload.occurredAt, payload.clientCreatedAt]);
+}
+
 export function isRetrySameReport(
-  record: { reporter_id: string; payload_sha256: string }, reporterId: string, sha256: string,
+  record: { reporter_id: string; payload_sha256: string }, reporterId: string, sha256: string, legacySha256?: string,
 ): boolean {
-  return record.reporter_id === reporterId && record.payload_sha256 === sha256;
+  return record.reporter_id === reporterId && (record.payload_sha256 === sha256 || (!!legacySha256 && record.payload_sha256 === legacySha256));
 }

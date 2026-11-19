@@ -9,7 +9,7 @@ create table if not exists public.ai_assessments (
   requested_by uuid not null references public.profiles(id),
   provider text not null check (provider = 'gemini'),
   model text not null,
-  status text not null check (status in ('completed','failed')),
+  status text not null check (status in ('pending','running','retryable','completed','failed')),
   provisional_summary text,
   model_observations jsonb,
   deterministic_checks jsonb not null default '{}'::jsonb,
@@ -18,8 +18,9 @@ create table if not exists public.ai_assessments (
   provider_failure text,
   created_at timestamptz not null default now(),
   constraint ai_assessment_result_consistent check (
-    (status = 'completed' and model_observations is not null and provider_failure is null)
-    or (status = 'failed' and provider_failure is not null)
+    (status in ('pending','running') and model_observations is null and provider_failure is null)
+    or (status = 'completed' and model_observations is not null and provider_failure is null)
+    or (status in ('retryable','failed') and provider_failure is not null)
   )
 );
 create index if not exists ai_assessments_report_idx on public.ai_assessments(report_id, created_at desc);

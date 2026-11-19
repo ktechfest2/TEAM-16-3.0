@@ -3,6 +3,7 @@ import { getViewer } from "@/lib/server/auth";
 import { adminClient } from "@/lib/server/supabase";
 import { observeWithGemini } from "@/lib/server/ai-assessment";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -13,12 +14,13 @@ export async function POST(req: Request) {
     if (!body || body.consentedFictionalEvidence !== true || typeof body.reportId !== "string" || !uuid.test(body.reportId))
       return NextResponse.json({ error: { code: "INPUT", message: "A report ID and explicit fictional-evidence consent are required" } }, { status: 400, headers: noStore });
     const reportId = body.reportId;
+    await enforceAbuseLimit(req, viewer.userId, { scope: "ai_assessment", reporterMax: 10, ipMax: 30, windowSeconds: 600 });
     const db = adminClient();
     const { data: report, error } = await db.from("reports").select("id,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(code,is_simulated)").eq("id", reportId).maybeSingle();
     if (error) throw error;
     if (!report || !report.ai_processing_consent || !(report.polling_units as { is_simulated: boolean }).is_simulated) return NextResponse.json({ error: { code: "NOT_ELIGIBLE", message: "AI observations require reporter consent and a fictional polling unit" } }, { status: 403, headers: noStore });
 
-    const { data: evidence, error: evidenceError } = await db.from("evidence").select("id,mime_type,storage_path").eq("report_id", reportId);
+    const { data: evidence, error: evidenceError } = await db.from("evidence").select("id,mime_type,storage_path").eq("report_id", reportId).eq("upload_status", "ready");
     if (evidenceError) throw evidenceError;
     const refs = [{ type: "report", id: report.id }, ...(evidence || []).map((item) => ({ type: "evidence", id: item.id }))];
     let deterministic = { location: report.polling_unit_id, category: report.category, occurredAt: report.occurred_at, possibleDuplicateReportIds: [] as string[] };
@@ -47,7 +49,7 @@ export async function POST(req: Request) {
 
     const { data: saved, error: saveError } = await db.from("ai_assessments").insert({
       report_id: reportId, requested_by: viewer.userId, provider: "gemini", model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      status: observation ? "completed" : "failed", provisional_summary: observation?.summary || null,
+      status: observation ? "completed" : "retryable", provisional_summary: observation?.summary || null,
       model_observations: observation, deterministic_checks: deterministic, source_references: refs,
       uncertainty: observation?.uncertainty || [], provider_failure: failure,
     }).select("id,status,provisional_summary,model_observations,deterministic_checks,source_references,uncertainty,provider_failure,created_at").single();
