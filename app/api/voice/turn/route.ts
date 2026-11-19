@@ -15,7 +15,7 @@ const replies: Record<string, string> = {
   ig: "Enwere m ike ịza ajụjụ izugbe gbasara Signa. Ọ bụrụ na enweghị ozi ọha akwadoro, ozi adịghị. Nke a apụtaghị na ebe ahụ dị nchebe.",
 };
 export async function POST(req: Request) {
-  try { await enforceAbuseLimit(req, "browser-voice", { scope: "voice", reporterMax: 10, ipMax: 20, windowSeconds: 600 }); }
+  try { await enforceAbuseLimit(req, "", { scope: "voice", reporterMax: 10, ipMax: 20, windowSeconds: 600 }); }
   catch (error) {
     const limited = error instanceof RequestLimitedError;
     return NextResponse.json({ error: limited ? "Too many voice requests" : "Voice service is temporarily unavailable" }, { status: limited ? 429 : 503, headers: noStore });

@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const a = Buffer.from(expected, "hex"); const b = Buffer.from(normalized, "hex");
   if (a.length !== b.length || !timingSafeEqual(a, b)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
-    await enforceAbuseLimit(req, "voicebip-tool", { scope: "voice", reporterMax: 60, ipMax: 120, windowSeconds: 600 });
+    await enforceAbuseLimit(req, "", { scope: "voice", reporterMax: 60, ipMax: 120, windowSeconds: 600 });
     const body = JSON.parse(raw);
     const event = body.event_type;
     const name = body.tool_name;

@@ -16,8 +16,9 @@ export async function enforceAbuseLimit(req: Request, reporterId: string, limit:
   if (!hmacSecret) throw new DependencyUnavailableError("Abuse controls are unavailable");
 
   const ip = trustedClientIp(req);
+  if (!reporterId && !ip) throw new DependencyUnavailableError("Abuse controls are unavailable");
   const checks = [
-    consume(limit.scope, `reporter:${reporterId}`, hmacSecret, limit.reporterMax, limit.windowSeconds),
+    ...(reporterId ? [consume(limit.scope, `reporter:${reporterId}`, hmacSecret, limit.reporterMax, limit.windowSeconds)] : []),
     ...(ip ? [consume(limit.scope, `network:${ip}`, hmacSecret, limit.ipMax, limit.windowSeconds)] : []),
   ];
   const results = await Promise.all(checks);

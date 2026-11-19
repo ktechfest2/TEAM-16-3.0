@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 import { getViewer } from "@/lib/server/auth";
 import { adminClient } from "@/lib/server/supabase";
 import { canonicalPayload, isRetrySameReport, legacyCanonicalPayload, parseReport } from "@/lib/report-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
+import { runConsentAssessment } from "@/lib/server/async-ai-assessment";
+
+export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
@@ -36,7 +40,10 @@ export async function POST(req: Request) {
       category: parsed.category, description: parsed.description, occurred_at: parsed.occurredAt,
       client_created_at: parsed.clientCreatedAt, ai_processing_consent: parsed.aiProcessingConsent, payload_sha256: hash,
     }).select("id,received_at").single();
-    if (!insertError) return NextResponse.json({ id: created!.id, receivedAt: created!.received_at, delivery: "received", duplicate: false }, { status: 201, headers: noStore });
+    if (!insertError) {
+      if (parsed.aiProcessingConsent) after(async () => { await runConsentAssessment(parsed.id).catch(() => undefined); });
+      return NextResponse.json({ id: created!.id, receivedAt: created!.received_at, delivery: "received", duplicate: false }, { status: 201, headers: noStore });
+    }
     if (insertError.code !== "23505") throw insertError;
 
     const { data: existing, error: lookupError } = await db.from("reports")
