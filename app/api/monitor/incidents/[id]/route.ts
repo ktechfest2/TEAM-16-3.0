@@ -52,7 +52,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         .eq("incident_id", id),
       db
         .from("reviews")
-        .select("id,outcome,reason,created_at,reviewer_id")
+        .select("id,outcome,reason,created_at,reviewer_id,review_evidence(evidence_id)")
         .eq("incident_id", id)
         .order("created_at", { ascending: false }),
       db
@@ -75,7 +75,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       {
         incident,
         reports: (links.data || []).map((link) => link.reports),
-        reviews: reviews.data || [],
+        reviews: (reviews.data || []).map((review: { review_evidence?: { evidence_id: string }[]; [key: string]: unknown }) => ({
+          ...review,
+          evidence_ids: (review.review_evidence || []).map((link) => link.evidence_id),
+          review_evidence: undefined,
+        })),
         assignment: assignment.data || null,
         events: events.data || [],
       },
