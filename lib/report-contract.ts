@@ -12,6 +12,7 @@ export type ReportPayload = {
   description: string;
   occurredAt: string | null;
   clientCreatedAt: string | null;
+  aiProcessingConsent: boolean;
 };
 
 export class InputError extends Error {
@@ -44,6 +45,7 @@ export function parseReport(input: unknown): ReportPayload {
     category: p.category as ReportCategory, description: p.description.trim(),
     occurredAt: normalizeOptionalDate(p.occurredAt, "occurredAt"),
     clientCreatedAt: normalizeOptionalDate(p.clientCreatedAt, "clientCreatedAt"),
+    aiProcessingConsent: p.aiProcessingConsent === true,
   };
 }
 
@@ -51,11 +53,17 @@ export function canonicalPayload(payload: ReportPayload): string {
   return JSON.stringify([
     payload.pollingUnitId, payload.category, payload.description,
     payload.occurredAt, payload.clientCreatedAt,
+    payload.aiProcessingConsent,
   ]);
 }
 
+/** Hash shape used before consent was added; preserves queued/offline report retries. */
+export function legacyCanonicalPayload(payload: ReportPayload): string {
+  return JSON.stringify([payload.pollingUnitId, payload.category, payload.description, payload.occurredAt, payload.clientCreatedAt]);
+}
+
 export function isRetrySameReport(
-  record: { reporter_id: string; payload_sha256: string }, reporterId: string, sha256: string,
+  record: { reporter_id: string; payload_sha256: string }, reporterId: string, sha256: string, legacySha256?: string,
 ): boolean {
-  return record.reporter_id === reporterId && record.payload_sha256 === sha256;
+  return record.reporter_id === reporterId && (record.payload_sha256 === sha256 || (!!legacySha256 && record.payload_sha256 === legacySha256));
 }

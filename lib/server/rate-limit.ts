@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import { DependencyUnavailableError, RequestLimitedError } from "./responses";
 import { adminClient } from "./supabase";
 
-type Limit = { scope: "report" | "evidence" | "voice" | "ai"; reporterMax: number; ipMax: number; windowSeconds: number };
+type Limit = { scope: "report" | "evidence" | "ai_assessment" | "voice"; reporterMax: number; ipMax: number; windowSeconds: number };
 
 /**
  * Durable fixed-window counters in Postgres. Only HMAC-derived identifiers are

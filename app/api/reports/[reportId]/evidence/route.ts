@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getViewer } from "@/lib/server/auth";
 import { isUuid } from "@/lib/report-contract";
 import { validateEvidenceBytes, MAX_EVIDENCE_BYTES } from "@/lib/evidence-contract";
 import { canViewReportEvidence, listReadyEvidence, reporterOwnsReport, saveEvidence } from "@/lib/server/evidence";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { runConsentAssessment } from "@/lib/server/async-ai-assessment";
 
 const permittedReaders = ["reporter", "monitor", "coordinator", "admin"] as const;
 
@@ -54,6 +55,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ reportId: stri
     }
 
     const result = await saveEvidence({ req, evidenceId: evidenceId.toLowerCase(), reportId, reporterId: viewer.userId, mimeType, bytes });
+    // saveEvidence returns only after metadata says ready; failed/incomplete uploads throw.
+    after(async () => { await runConsentAssessment(reportId).catch(() => undefined); });
     return NextResponse.json(
       { evidence: result.item, duplicate: result.duplicate, integrityNote: "SHA-256 identifies received bytes; it does not prove authenticity." },
       { status: result.duplicate ? 200 : 201, headers: noStore },

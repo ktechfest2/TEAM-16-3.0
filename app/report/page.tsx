@@ -28,6 +28,7 @@ export default function ReportPage() {
   const [unitId, setUnitId] = useState("");
   const [category, setCategory] = useState<string>("disruption");
   const [description, setDescription] = useState("");
+  const [aiProcessingConsent, setAiProcessingConsent] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
@@ -104,7 +105,7 @@ export default function ReportPage() {
     try {
       const payload: ReportPayload = parseReport({
         id: crypto.randomUUID(), pollingUnitId: unitId, category,
-        description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
+        description, clientCreatedAt: new Date().toISOString(), occurredAt: null, aiProcessingConsent,
       });
       let reporterId: string | null = null;
       try {
@@ -120,6 +121,7 @@ export default function ReportPage() {
       }
       await queueReport(payload, reporterId);
       setDescription("");
+      setAiProcessingConsent(false);
       setLastSavedRef(shortRef(payload.id));
       setNotice(reporterId
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
@@ -256,6 +258,10 @@ export default function ReportPage() {
               />
             </Field>
           </div>
+          <label className="mt-4 flex items-start gap-3 text-[13px] leading-relaxed text-slate-ink/80">
+            <input type="checkbox" checked={aiProcessingConsent} onChange={(event) => setAiProcessingConsent(event.target.checked)} className="mt-1 size-4 accent-primary" />
+            <span>Optional: I consent to AI generating a provisional observation summary from this report and its evidence. AI outputs are uncertain and will not verify the report; an authorised human remains responsible for review.</span>
+          </label>
         </Card>
       </Reveal>
 
