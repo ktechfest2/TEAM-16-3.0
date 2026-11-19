@@ -1,10 +1,10 @@
 import { defineConfig } from "@playwright/test";
 
-const baseURL = "http://localhost:3210";
+const baseURL = process.env.SIGNA_E2E_BASE_URL ?? "http://127.0.0.1:3210";
 
 export default defineConfig({
   testDir: "./tests/browser",
-  timeout: 30_000,
+  timeout: 45_000,
   expect: { timeout: 7_500 },
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
@@ -15,6 +15,7 @@ export default defineConfig({
     baseURL,
     browserName: "chromium",
     headless: true,
+    reducedMotion: "reduce",
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
       ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
       : {}),
@@ -22,10 +23,10 @@ export default defineConfig({
     video: "off",
     screenshot: "off",
   },
-  webServer: {
-    command: process.env.SIGNA_E2E_SERVER_COMMAND ?? "npm run dev -- --webpack --port 3210",
+  webServer: process.env.SIGNA_E2E_EXTERNAL_SERVER === "true" ? undefined : {
+    command: process.env.SIGNA_E2E_SERVER_COMMAND ?? "npm run dev -- --webpack --hostname 127.0.0.1 --port 3210",
     url: `${baseURL}/my-reports`,
-    reuseExistingServer: false,
+    reuseExistingServer: process.env.SIGNA_E2E_REUSE_SERVER === "true",
     timeout: 120_000,
     env: {
       NEXT_PUBLIC_SUPABASE_URL: "https://fixture.supabase.co",

@@ -31,6 +31,7 @@ export default function ReportPage() {
   const [unitId, setUnitId] = useState("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState("");
+  const [fictionalTest, setFictionalTest] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
@@ -133,7 +134,7 @@ export default function ReportPage() {
       const payload: ReportPayload = parseReport({
         id: crypto.randomUUID(), pollingUnitId: unitId, category,
         description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
-        aiProcessingConsent: true, fictionalTestSubmission: true,
+        aiProcessingConsent: fictionalTest, fictionalTestSubmission: fictionalTest,
       });
       let reporterId: string | null = null;
       try {
@@ -170,6 +171,7 @@ export default function ReportPage() {
         }
       }
       setDescription("");
+      setFictionalTest(false);
       setLastSavedRef(shortRef(payload.id));
       setNotice(reporterId
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
@@ -243,7 +245,7 @@ export default function ReportPage() {
   const activeCategory = category ? categoryOf(category) : null;
 
   return (
-    <PageShell width="narrow" className="pb-16">
+    <PageShell width="narrow" className="pb-8">
       <Reveal>
         <PageHeader
           eyebrow={
@@ -252,7 +254,7 @@ export default function ReportPage() {
             </>
           }
           title="Report an incident"
-          description="Three short steps. Your report is saved on this device first, then delivered when a connection is available."
+          description="Choose a polling unit and what happened. Details and photos are optional."
           actions={
             <Badge tone={online ? "ok" : "warn"} size="lg">
               {online ? <Wifi aria-hidden /> : <WifiOff aria-hidden />}
@@ -262,7 +264,7 @@ export default function ReportPage() {
         />
       </Reveal>
 
-      <Reveal delay={0.06} className="mt-7">
+      <Reveal delay={0.06} className="mt-4">
         <SafetyNotice title="This button does not call emergency services.">
           In immediate danger, move to safety and contact authorised emergency responders. Never put
           yourself at risk to collect evidence.
@@ -270,14 +272,14 @@ export default function ReportPage() {
       </Reveal>
 
       {/* ---------- Step 1 · Where ---------- */}
-      <Reveal delay={0.1} className="mt-6">
-        <Card className="p-5 sm:p-6">
+      <Reveal delay={0.1} className="mt-4">
+        <Card className="p-4 sm:p-5">
           <StepLabel index={1} title="Where did it happen?" />
           <div className="mt-4">
             <Field
               label="Polling unit"
               htmlFor="unit"
-              help="This build uses fictional polling units. If the list is empty, connect once to load it."
+              help="Confirm this unit before submitting. The current list is fictional test data."
             >
               <Select id="unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value); else localStorage.removeItem("signa:last-polling-unit"); }}>
                 <option value="">Select simulated polling unit</option>
@@ -307,12 +309,12 @@ export default function ReportPage() {
       </Reveal>
 
       {/* ---------- Step 2 · What ---------- */}
-      <Reveal delay={0.14} className="mt-4">
-        <Card className="p-5 sm:p-6">
+      <Reveal delay={0.14} className="mt-2">
+        <Card className="p-4 sm:p-5">
           <StepLabel index={2} title="What did you see?" />
-          <fieldset className="mt-4">
+          <fieldset className="mt-3">
             <legend className="sr-only">Issue type</legend>
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {categories.map((key) => {
                 const meta = categoryMeta[key];
                 const Icon = meta.icon;
@@ -324,7 +326,7 @@ export default function ReportPage() {
                     aria-pressed={active}
                     onClick={() => setCategory(key)}
                     className={cn(
-                      "flex min-h-[86px] flex-col items-start gap-2 rounded-[14px] p-3.5 text-left transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                      "flex min-h-12 items-center gap-2 rounded-[12px] p-2.5 text-left transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]",
                       active
                         ? "bg-midnight text-white shadow-[0_8px_24px_rgba(11,18,32,0.18)]"
                         : "bg-canvas text-navy ring-1 ring-inset ring-[var(--hairline)] hover:bg-white hover:shadow-sm",
@@ -342,8 +344,10 @@ export default function ReportPage() {
       </Reveal>
 
       {/* ---------- Step 3 · Describe ---------- */}
-      <Reveal delay={0.18} className="mt-4">
-        <Card className="p-5 sm:p-6">
+      <details className="mt-2 rounded-[18px] bg-white p-3 ring-1 ring-[var(--hairline)]">
+        <summary className="cursor-pointer rounded-lg px-2 py-2 text-[13px] font-semibold text-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">Add details or photo (optional){evidenceRecords.length ? ` · ${evidenceRecords.length} photo status update${evidenceRecords.length === 1 ? "" : "s"}` : ""}</summary>
+      <Reveal delay={0.18} className="mt-2">
+        <Card className="p-4 sm:p-5">
           <StepLabel index={3} title="Describe what you observed" />
           <div className="mt-4">
             <Field
@@ -361,18 +365,18 @@ export default function ReportPage() {
               />
             </Field>
           </div>
-          <p className="mt-3 text-[12px] leading-relaxed text-slate-ink/80">Fictional test reports submitted here may be assessed by AI, including attached photos. A human reviewer decides what is supported. Do not include real personal information.</p>
+          <label className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-slate-ink/80"><input type="checkbox" checked={fictionalTest} onChange={(event) => setFictionalTest(event.target.checked)} className="mt-0.5 size-4 accent-primary" /><span>This is a fictional test with no real personal information. In an approved demo session, text and photos may receive provisional AI assessment. Human review remains authoritative.</span></label>
         </Card>
       </Reveal>
 
       {/* ---------- Optional photo evidence ---------- */}
-      <Reveal delay={0.2} className="mt-4">
-        <Card className="p-5 sm:p-6">
+      <Reveal delay={0.2} className="mt-2">
+        <Card className="p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-trust-soft text-trust"><Camera className="size-4" aria-hidden /></span>
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] font-semibold leading-tight">Optional photo evidence</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-ink/75">Photos upload separately after the server confirms this report. Each image must be JPEG, PNG or WebP and no larger than 4 MiB. Never put yourself at risk to collect evidence.</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-slate-ink/75">Uploads separately after the report receipt. JPEG, PNG or WebP, up to 4 MiB.</p>
               <input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Take a photo" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
               <input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Choose photos from gallery" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
               <div className="mt-4 flex flex-wrap gap-2">
@@ -382,8 +386,8 @@ export default function ReportPage() {
               {selectedPhotos.length > 0 && (
                 <div className="mt-4 space-y-2" aria-label="Selected photos">
                   {selectedPhotos.map(({ evidenceId, file }) => (
-                    <div key={evidenceId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-canvas px-3.5 py-3 ring-1 ring-inset ring-[var(--hairline)]">
-                      <span className="min-w-0 truncate text-[13px] font-medium text-navy">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB · selected on this device</span>
+                    <div key={evidenceId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-canvas px-3 py-2 ring-1 ring-inset ring-[var(--hairline)]">
+                      <div className="flex min-w-0 items-center gap-2"><PhotoThumbnail file={file} /><span className="min-w-0 truncate text-[12px] font-medium text-navy">{file.name} · {file.size < 1024 * 1024 ? `${Math.max(1, Math.round(file.size / 1024))} KB` : `${(file.size / 1024 / 1024).toFixed(1)} MB`} · selected on this device</span></div>
                       <button type="button" className="min-h-10 px-2 text-[13px] font-semibold text-alert underline underline-offset-2" onClick={() => { setSelectedPhotos((items) => items.filter((item) => item.evidenceId !== evidenceId)); if (photosForReportId && selectedPhotos.length === 1) { setPhotosForReportId(null); setPhotosForReporterId(null); } }}>Remove</button>
                     </div>
                   ))}
@@ -423,7 +427,8 @@ export default function ReportPage() {
       </Reveal>
 
       {/* ---------- Submit ---------- */}
-      <Reveal delay={0.22} className="mt-4">
+      </details>
+      <Reveal delay={0.22} className="mt-2">
         <Card className="overflow-hidden">
           <div className="p-5 sm:p-6">
             <p className="text-[13px] leading-relaxed text-slate-ink/80">
@@ -547,4 +552,14 @@ function StepLabel({ index, title }: { index: number; title: string }) {
       <h2 className="text-[17px] font-semibold leading-tight">{title}</h2>
     </div>
   );
+}
+
+function PhotoThumbnail({ file }: { file: File }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+  return url ? <img src={url} alt={`Preview of ${file.name}`} className="size-12 shrink-0 rounded-lg object-cover" /> : null;
 }

@@ -10,8 +10,8 @@ import { ReviewChip } from "@/components/signa/status-chip";
 import type { ReviewState, ResponseState } from "@/lib/taxonomy";
 import { shortRef } from "@/lib/utils";
 
-type CaseReport = { id: string; category: string; description: string; received_at: string; occurred_at: string | null };
-type Assessment = {
+type CaseReport = { id: string; category: string; description: string; received_at: string; occurred_at: string | null; aiEligible: boolean; latestAssessment: Assessment | null };
+export type Assessment = {
   id: string;
   status: "completed" | "failed" | string;
   provisional_summary: string | null;
@@ -84,7 +84,8 @@ export function AiAssessmentPanel({
       <div className="mt-5 space-y-3">
         {reports.map((report) => {
           const result = results[report.id];
-          const assessment = result?.assessment;
+          const assessment = result?.assessment && (!report.latestAssessment || result.assessment.created_at >= report.latestAssessment.created_at)
+            ? result.assessment : report.latestAssessment;
           const observations = assessment?.model_observations;
           const duplicateIds = assessment?.deterministic_checks?.possibleDuplicateReportIds || [];
           return (
@@ -94,12 +95,12 @@ export function AiAssessmentPanel({
                   <p className="text-[13.5px] font-semibold text-navy">Report {shortRef(report.id)}</p>
                   <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-slate-ink/75">{report.description}</p>
                 </div>
-                <Button type="button" variant="subtle" size="sm" loading={result?.loading} disabled={result?.loading} onClick={() => void requestAssessment(report.id)}>
+                {report.aiEligible && assessment?.status !== "completed" && <Button type="button" variant="subtle" size="sm" loading={result?.loading} disabled={result?.loading} onClick={() => void requestAssessment(report.id)}>
                   {assessment ? <RefreshCw className="size-3.5" aria-hidden /> : <Bot className="size-3.5" aria-hidden />}
                   {assessment ? "Retry assessment" : "Request assessment"}
-                </Button>
+                </Button>}
               </div>
-              {!result && <p className="mt-3 text-[12.5px] text-muted-ink">No result is loaded in this view. The current API accepts assessment requests but does not expose assessment history.</p>}
+              {!assessment && <p className="mt-3 text-[12.5px] text-muted-ink">{report.aiEligible ? "No persisted assessment yet. Human review can proceed independently." : "External AI assessment is unavailable for this report."}</p>}
               {result?.loading && <p role="status" className="mt-3 flex items-center gap-2 text-[12.5px] text-slate-ink/75"><Loader2 className="size-4 animate-spin" aria-hidden />Requesting an assessment…</p>}
               {result?.error && <p role="alert" className="mt-3 rounded-lg bg-alert/5 p-3 text-[12.5px] text-alert">Assessment unavailable: {result.error}. No result is being inferred.</p>}
               {assessment && (

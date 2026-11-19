@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowRight, FolderPlus, Inbox, LayoutDashboard, LogOut, RefreshCw, Search, ShieldAlert,
 } from "lucide-react";
@@ -40,6 +41,7 @@ type CaseRow = {
   updated_at: string;
   polling_units: { code: string; name: string; ward: string | null; lga: string | null } | null;
   incident_reports: { report_id: string; reports: { category: string } | null }[];
+  canReview?: boolean;
 };
 
 type Tab = "inbox" | "cases";
@@ -52,6 +54,7 @@ function linkedIncidentId(report: InboxReport): string | null {
 }
 
 export default function MonitorPage() {
+  const router = useRouter();
   const [access, setAccess] = useState(false);
   const [checking, setChecking] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -120,7 +123,7 @@ export default function MonitorPage() {
       setSummary("");
       setReason("");
       await load();
-      window.location.href = `/monitor/incidents/${created.id}`;
+      router.push(`/monitor/incidents/${created.id}`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not group these reports");
     } finally {
@@ -169,6 +172,7 @@ export default function MonitorPage() {
     );
   });
   const openCases = cases.filter((item) => item.review_state === "under_review").length;
+  const independentQueue = cases.filter((item) => item.review_state === "under_review" && item.canReview);
   const awaitingResponse = cases.filter(
     (item) => item.review_state === "supported" && item.response_state === "unassigned",
   ).length;
@@ -256,6 +260,7 @@ export default function MonitorPage() {
       {/* ---------- Inbox ---------- */}
       {tab === "inbox" && (
         <div className="mt-5">
+          {independentQueue.length > 0 && <section className="mb-4 rounded-2xl bg-warn-soft p-4" aria-label="Cases awaiting independent review"><h2 className="text-sm font-semibold text-navy">Awaiting independent review</h2><p className="mt-1 text-xs text-slate-ink">These grouped cases need a decision from an authorized reviewer who did not create or report them.</p><div className="mt-2 flex flex-wrap gap-2">{independentQueue.map((item) => <Link key={item.id} href={`/monitor/incidents/${item.id}`} className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-signal underline underline-offset-2">{item.summary}</Link>)}</div></section>}
           {loading && reports.length === 0 ? (
             <div className="grid gap-3 lg:grid-cols-2">
               <SkeletonCard />

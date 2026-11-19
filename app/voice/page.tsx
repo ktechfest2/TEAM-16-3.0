@@ -8,6 +8,11 @@ const options = [
 ];
 
 export default function VoiceEnquiryPage() {
+  if (process.env.NEXT_PUBLIC_SIGNA_VOICE_ENABLED !== "true") return <main className="mx-auto max-w-xl px-5 py-16"><a className="text-sm underline" href="/report">← Report an incident</a><h1 className="mt-6 text-3xl font-semibold">Speak with Signa is unavailable</h1><p className="mt-3 text-sm text-slate-ink">Voice enquiries are paused while we verify language and telephone support. You can submit a written report or track one in My Reports. Signa does not place emergency calls.</p></main>;
+  return <VoiceExperience />;
+}
+
+function VoiceExperience() {
   const [language, setLanguage] = useState("en");
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -1,15 +1,16 @@
 import "server-only";
 import { adminClient } from "@/lib/server/supabase";
 import { observeWithGemini } from "@/lib/server/ai-assessment";
+import { approvedFictionalReport } from "./fictional-ai";
 
 /** Runs after the report/evidence response has been sent; always remains provisional. */
 export async function runConsentAssessment(reportId: string): Promise<void> {
   const db = adminClient();
   const { data: report, error } = await db.from("reports")
-    .select("id,reporter_id,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(is_simulated)")
+    .select("id,reporter_id,received_at,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(is_simulated)")
     .eq("id", reportId).maybeSingle();
   const unit = report && (Array.isArray(report.polling_units) ? report.polling_units[0] : report.polling_units) as { is_simulated?: boolean } | null;
-  if (error || !report || !report.ai_processing_consent || unit?.is_simulated !== true) return;
+  if (error || !report || !report.ai_processing_consent || unit?.is_simulated !== true || !approvedFictionalReport(report.reporter_id, report.received_at)) return;
 
   const { data: evidence } = await db.from("evidence").select("id,mime_type,storage_path")
     .eq("report_id", reportId).eq("upload_status", "ready").limit(2);

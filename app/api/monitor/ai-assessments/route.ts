@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/server/supabase";
 import { observeWithGemini } from "@/lib/server/ai-assessment";
 import { errorResponse, noStore } from "@/lib/server/responses";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
+import { approvedFictionalReport } from "@/lib/server/fictional-ai";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -16,10 +17,10 @@ export async function POST(req: Request) {
     const reportId = body.reportId;
     await enforceAbuseLimit(req, viewer.userId, { scope: "ai_assessment", reporterMax: 10, ipMax: 30, windowSeconds: 600 });
     const db = adminClient();
-    const { data: report, error } = await db.from("reports").select("id,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(code,is_simulated)").eq("id", reportId).maybeSingle();
+    const { data: report, error } = await db.from("reports").select("id,reporter_id,received_at,description,category,occurred_at,polling_unit_id,ai_processing_consent,polling_units!inner(code,is_simulated)").eq("id", reportId).maybeSingle();
     if (error) throw error;
     const unit = report && (Array.isArray(report.polling_units) ? report.polling_units[0] : report.polling_units) as { is_simulated?: boolean } | null;
-    if (!report || !report.ai_processing_consent || unit?.is_simulated !== true) return NextResponse.json({ error: { code: "NOT_ELIGIBLE", message: "AI observations require reporter consent and a fictional polling unit" } }, { status: 403, headers: noStore });
+    if (!report || !report.ai_processing_consent || unit?.is_simulated !== true || !approvedFictionalReport(report.reporter_id, report.received_at)) return NextResponse.json({ error: { code: "NOT_ELIGIBLE", message: "External assessment is restricted to approved fictional test reports" } }, { status: 403, headers: noStore });
 
     const { data: evidence, error: evidenceError } = await db.from("evidence").select("id,mime_type,storage_path").eq("report_id", reportId).eq("upload_status", "ready");
     if (evidenceError) throw evidenceError;

@@ -7,6 +7,7 @@ import { canonicalPayload, isRetrySameReport, legacyCanonicalPayload, parseRepor
 import { errorResponse, noStore } from "@/lib/server/responses";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 import { runConsentAssessment } from "@/lib/server/async-ai-assessment";
+import { approvedFictionalReporter } from "@/lib/server/fictional-ai";
 
 export const maxDuration = 30;
 
@@ -35,13 +36,14 @@ export async function POST(req: Request) {
 
     await enforceAbuseLimit(req, viewer.userId, { scope: "report", reporterMax: 30, ipMax: 120, windowSeconds: 600 });
 
+    const aiEligible = parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true && approvedFictionalReporter(viewer.userId);
     const { data: created, error: insertError } = await db.from("reports").insert({
       id: parsed.id, reporter_id: viewer.userId, polling_unit_id: parsed.pollingUnitId,
       category: parsed.category, description: parsed.description, occurred_at: parsed.occurredAt,
-      client_created_at: parsed.clientCreatedAt, ai_processing_consent: parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true, payload_sha256: hash,
+      client_created_at: parsed.clientCreatedAt, ai_processing_consent: aiEligible, payload_sha256: hash,
     }).select("id,received_at").single();
     if (!insertError) {
-      if (parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true) after(async () => { await runConsentAssessment(parsed.id).catch(() => undefined); });
+      if (aiEligible) after(async () => { await runConsentAssessment(parsed.id).catch(() => undefined); });
       return NextResponse.json({ id: created!.id, receivedAt: created!.received_at, delivery: "received", duplicate: false }, { status: 201, headers: noStore });
     }
     if (insertError.code !== "23505") throw insertError;

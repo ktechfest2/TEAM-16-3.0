@@ -27,6 +27,7 @@ import { cn, formatDateTime, formatRelative, shortRef } from "@/lib/utils";
 import { AiAssessmentPanel } from "@/components/signa/ai-assessment-panel";
 
 type CaseFile = {
+  reviewEligibility: { canReview: boolean; reason: string | null };
   incident: {
     id: string;
     summary: string;
@@ -39,7 +40,7 @@ type CaseFile = {
       state: string | null; is_simulated: boolean;
     } | null;
   };
-  reports: { id: string; category: string; description: string; received_at: string; occurred_at: string | null }[];
+  reports: { id: string; category: string; description: string; received_at: string; occurred_at: string | null; aiEligible: boolean; latestAssessment: import("@/components/signa/ai-assessment-panel").Assessment | null }[];
   reviews: { id: string; outcome: ReviewOutcome; reason: string; created_at: string; evidence_ids?: string[] }[];
   assignment: {
     id: string; assigned_to: string; assigned_at: string;
@@ -69,13 +70,15 @@ export default function IncidentDetailPage() {
   const [outcome, setOutcome] = useState<ReviewOutcome>("inconclusive");
   const [reason, setReason] = useState("");
   const [savingReview, setSavingReview] = useState(false);
+  const [reviewFeedback, setReviewFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [coordinatorId, setCoordinatorId] = useState("");
   const [assignNote, setAssignNote] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [assignFeedback, setAssignFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
-    if (!id) return;
+    if (!id) return false;
     setLoading(true);
     setError("");
     try {
@@ -97,12 +100,14 @@ export default function IncidentDetailPage() {
       } catch {
         setCoordinators([]);
       }
+      return true;
     } catch (e) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
         setAccess(false);
       } else {
         setError(e instanceof Error ? e.message : "Unable to load this case");
       }
+      return false;
     } finally {
       setLoading(false);
     }
@@ -112,7 +117,7 @@ export default function IncidentDetailPage() {
 
   async function recordReview() {
     setSavingReview(true);
-    setError("");
+    setReviewFeedback(null);
     try {
       await staffFetch(`/api/monitor/incidents/${id}/reviews`, {
         method: "POST",
@@ -120,9 +125,10 @@ export default function IncidentDetailPage() {
       });
       setReason("");
       setSelectedReviewEvidence([]);
-      await load();
+      setReviewFeedback({ ok: true, text: "Review recorded. The case status and timeline are updating." });
+      if (!(await load())) setReviewFeedback({ ok: true, text: "Review recorded, but the case could not refresh. Refresh to see the latest timeline." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not record the review");
+      setReviewFeedback({ ok: false, text: e instanceof Error ? e.message : "Could not record the review" });
     } finally {
       setSavingReview(false);
     }
@@ -130,16 +136,17 @@ export default function IncidentDetailPage() {
 
   async function assign() {
     setAssigning(true);
-    setError("");
+    setAssignFeedback(null);
     try {
       await staffFetch(`/api/monitor/incidents/${id}/assign`, {
         method: "POST",
         body: JSON.stringify({ coordinatorId, note: assignNote || null }),
       });
       setAssignNote("");
-      await load();
+      setAssignFeedback({ ok: true, text: "Assignment recorded. The case is updating." });
+      if (!(await load())) setAssignFeedback({ ok: true, text: "Assignment recorded, but the case could not refresh. Refresh to see its status." });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not assign this case");
+      setAssignFeedback({ ok: false, text: e instanceof Error ? e.message : "Could not assign this case" });
     } finally {
       setAssigning(false);
     }
@@ -151,7 +158,7 @@ export default function IncidentDetailPage() {
         <StaffGate
           title="Case file"
           description="Case files are restricted to approved monitors and coordinators."
-          onSignedIn={load}
+          onSignedIn={() => void load()}
         />
       </PageShell>
     );
@@ -187,7 +194,7 @@ export default function IncidentDetailPage() {
     );
   }
 
-  const { incident, reports, reviews, assignment, events } = data;
+  const { incident, reports, reviews, assignment, events, reviewEligibility } = data;
   const unit = incident.polling_units;
   const canAssign = incident.review_state === "supported" && !assignment;
   const availableEvidence = reports.flatMap((report) => (evidenceByReport[report.id]?.items || []).map((item) => ({ ...item, reportId: report.id })));
@@ -331,6 +338,9 @@ export default function IncidentDetailPage() {
               title="Record a review"
               description="Your outcome and rationale are stored against your account and appear on the case timeline."
             />
+            {!reviewEligibility.canReview ? (
+              <p role="status" className="mt-4 rounded-xl bg-warn-soft p-4 text-[13px] text-slate-ink">Awaiting independent review. {reviewEligibility.reason} Another authorized reviewer must record the decision.</p>
+            ) : <>
             <div className="mt-5 grid gap-2.5 sm:grid-cols-3">
               {reviewOutcomes.map((value) => {
                 const meta = reviewMeta[value];
@@ -399,6 +409,8 @@ export default function IncidentDetailPage() {
               <Scale className="size-4" aria-hidden />
               Record review outcome
             </Button>
+            </>}
+            {reviewFeedback && <p role={reviewFeedback.ok ? "status" : "alert"} className={cn("mt-3 rounded-lg p-3 text-[13px]", reviewFeedback.ok ? "bg-trust-soft text-trust" : "bg-alert/10 text-alert")}>{reviewFeedback.text}</p>}
           </Card>
 
           <AiAssessmentPanel reports={reports} reviewState={incident.review_state} responseState={incident.response_state} />
@@ -479,6 +491,7 @@ export default function IncidentDetailPage() {
                 supported review outcome before routing it to a coordinator.
               </p>
             )}
+            {assignFeedback && <p role={assignFeedback.ok ? "status" : "alert"} className={cn("mt-3 rounded-lg p-3 text-[13px]", assignFeedback.ok ? "bg-trust-soft text-trust" : "bg-alert/10 text-alert")}>{assignFeedback.text}</p>}
           </Card>
         </div>
 

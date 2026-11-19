@@ -56,6 +56,7 @@ export default function CoordinatorPage() {
   const [followNote, setFollowNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [actionStatus, setActionStatus] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,6 +97,7 @@ export default function CoordinatorPage() {
       });
       setAckTarget(null);
       setAckNote("");
+      setActionStatus("Acknowledgement recorded. This confirms internal responsibility, not external dispatch.");
       await load();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not acknowledge this assignment");
@@ -116,6 +118,7 @@ export default function CoordinatorPage() {
       setFollowTarget(null);
       setAction("");
       setFollowNote("");
+      setActionStatus("Follow-up recorded in the case history.");
       await load();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not record this follow-up");
@@ -208,6 +211,7 @@ export default function CoordinatorPage() {
       </div>
 
       {error && <p role="alert" className="mt-4 text-[13.5px] text-alert">{error}</p>}
+      {actionStatus && <p role="status" className="mt-4 rounded-xl bg-trust-soft p-3 text-[13px] text-trust">{actionStatus}</p>}
 
       <div className="mt-5">
         {loading && assignments.length === 0 ? (

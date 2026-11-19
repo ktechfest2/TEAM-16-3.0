@@ -63,7 +63,8 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
     if (path === `/api/monitor/incidents/${CASE_ID}` && method === "GET") {
       return route.fulfill({ json: {
         incident: { id: CASE_ID, summary: "Fictional accreditation pause", review_state: reviewState, response_state: responseState, created_at: "2026-11-19T09:00:00.000Z", updated_at: "2026-11-19T09:00:00.000Z", polling_units: { code: "SIM-PU-001", name: "SIMULATED Polling Unit 001", ward: null, lga: null, state: null, is_simulated: true } },
-        reports: [{ id: REPORT_ID, category: "disruption", description: "Fictional reports of an observed pause in accreditation.", received_at: "2026-11-19T09:00:00.000Z", occurred_at: null }],
+        reviewEligibility: { canReview: true, reason: null },
+        reports: [{ id: REPORT_ID, category: "disruption", description: "Fictional reports of an observed pause in accreditation.", received_at: "2026-11-19T09:00:00.000Z", occurred_at: null, aiEligible: true, latestAssessment: null }],
         reviews: reviewState === "under_review" ? [] : [{ id: "00000000-0000-4000-8000-000000000501", outcome: reviewState, reason: "The observations support the reported pause only.", created_at: "2026-11-19T09:10:00.000Z", evidence_ids: [] }],
         assignment,
         events: [],
@@ -117,7 +118,7 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await page.getByLabel("Why these reports belong together").fill("Same simulated unit and event window; monitor review required.");
   await page.getByRole("button", { name: "Open case with 1 report" }).click();
   await expect(page).toHaveURL(new RegExp(`/monitor/incidents/${CASE_ID}$`));
-  await expect(page.getByText("Human review", { exact: false })).toBeVisible();
+  await expect(page.getByText("Human verification", { exact: true })).toBeVisible();
   await expect(page.getByText("AI assessment", { exact: true })).toBeVisible();
   for (const width of [320, 375, 1280]) {
     await page.setViewportSize({ width, height: 900 });
@@ -132,8 +133,8 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await expect(page.getByText("Not returned by the current assessment contract.", { exact: false }).first()).toBeVisible();
   await expect(page.getByText("Possible same-unit/category/time match")).toBeVisible();
 
-  await page.getByRole("button", { name: "Supported" }).click();
-  await page.getByLabel(new RegExp(`${EVIDENCE_ID.slice(0, 4)}-${EVIDENCE_ID.replaceAll("-", "").slice(4, 8)}`)).check();
+  await page.getByRole("button", { name: "Supported by evidence", exact: true }).click();
+  await page.getByRole("checkbox", { name: /report 0000-0000/ }).last().check();
   await page.getByLabel("Rationale").fill("The observations support the reported pause only.");
   await page.getByRole("button", { name: "Record review outcome" }).click();
   await expect.poll(() => reviewedEvidenceIds).toEqual([EVIDENCE_ID]);
@@ -147,13 +148,13 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await page.goto("/coordinator");
   await signIn(page, "coordinator@example.test");
   await expect(page.getByText("Fictional accreditation pause")).toBeVisible();
-  await page.getByRole("button", { name: "Acknowledge" }).click();
+  await page.getByRole("button", { name: "Acknowledge", exact: true }).click();
   await page.getByRole("button", { name: "Confirm receipt" }).click();
   await expect(page.getByText(/Acknowledged/)).toBeVisible();
   await page.getByRole("button", { name: "Record follow-up" }).click();
   await page.getByLabel("Action taken").fill("Reviewed with internal monitoring desk");
   await page.getByRole("button", { name: "Save to case timeline" }).click();
-  await expect(page.getByText("Follow-up recorded")).toBeVisible();
+  await expect(page.getByText("Follow-up recorded", { exact: true })).toBeVisible();
 });
 
 test("a denied staff API keeps the workspace restricted and reports the server decision", async ({ page, context }) => {
@@ -164,5 +165,34 @@ test("a denied staff API keeps the workspace restricted and reports the server d
   await expect(page.getByText("Only pre-approved monitors can open this workspace.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Approved staff sign-in" })).toBeVisible();
   await expect(page.getByText("Reports received", { exact: true })).toHaveCount(0);
+});
+
+test("case creator sees independent-review guidance and persisted AI without a new provider request", async ({ page, context }) => {
+  await mockPasswordLogin(context);
+  let assessmentPosts = 0;
+  await context.route("**/api/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/monitor/reports") return route.fulfill({ json: { reports: [] } });
+    if (path === "/api/monitor/incidents") return route.fulfill({ json: { incidents: [] } });
+    if (path === `/api/monitor/incidents/${CASE_ID}`) return route.fulfill({ json: {
+      incident: { id: CASE_ID, summary: "Fictional case awaiting independent review", review_state: "under_review", response_state: "unassigned", created_at: "2026-11-19T09:00:00.000Z", updated_at: "2026-11-19T09:00:00.000Z", polling_units: { code: "SIM-PU-001", name: "SIMULATED Polling Unit 001", is_simulated: true } },
+      reviewEligibility: { canReview: false, reason: "An independent reviewer is required." },
+      reports: [{ id: REPORT_ID, category: "disruption", description: "Fictional account", received_at: "2026-11-19T09:00:00.000Z", occurred_at: null, aiEligible: false, latestAssessment: { id: "00000000-0000-4000-8000-000000000601", status: "completed", provisional_summary: "Provisional fictional summary", model_observations: { observations: ["Claimed pause"], image_observations: ["A queue is visible"] }, deterministic_checks: { possibleDuplicateReportIds: [] }, source_references: [{ type: "report", id: REPORT_ID }], uncertainty: ["Timing unclear"], provider_failure: null, created_at: "2026-11-19T09:05:00.000Z" } }],
+      reviews: [], assignment: null, events: [],
+    } });
+    if (path === `/api/reports/${REPORT_ID}/evidence`) return route.fulfill({ json: { evidence: [] } });
+    if (path === "/api/monitor/coordinators") return route.fulfill({ json: { coordinators: [] } });
+    if (path === "/api/monitor/ai-assessments" && route.request().method() === "POST") assessmentPosts += 1;
+    return route.fulfill({ status: 404, json: { error: { message: "Unmocked fixture route" } } });
+  });
+  await page.goto("/monitor");
+  await signIn(page, "monitor@example.test");
+  await page.goto(`/monitor/incidents/${CASE_ID}`);
+  await expect(page.getByText(/Awaiting independent review/).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Record review outcome" })).toHaveCount(0);
+  await expect(page.getByText("Provisional fictional summary")).toBeVisible();
+  await expect(page.getByText("A queue is visible")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request assessment" })).toHaveCount(0);
+  expect(assessmentPosts).toBe(0);
 });
 

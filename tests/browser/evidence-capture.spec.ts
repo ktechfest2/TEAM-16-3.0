@@ -56,7 +56,9 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
   }
   await page.getByLabel("Polling unit").selectOption(UNIT_ID);
   await page.getByRole("button", { name: /Disruption/i }).first().click();
+  await page.getByText(/Add details or photo \(optional\)/).click();
   await page.getByLabel("More details (optional)").fill("Fictional observation for the photo workflow.");
+  await page.getByLabel(/This is a fictional test with no real personal information/).check();
   await expect(page.getByLabel("Take a photo")).toHaveAttribute("capture", "environment");
   await page.getByLabel("Take a photo").setInputFiles({
     name: "fictional-camera.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
@@ -68,6 +70,8 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
   });
   await expect(page.getByText(/fictional-camera.jpg.*selected on this device/i)).toBeVisible();
   await expect(page.getByText(/fictional-gallery.jpg.*selected on this device/i)).toBeVisible();
+  await expect(page.getByRole("img", { name: "Preview of fictional-camera.jpg" })).toBeVisible();
+  await expect(page.getByText(/fictional-camera.jpg.*KB/i)).toBeVisible();
   const save = page.getByRole("button", { name: "Submit alert" });
   await save.focus();
   await page.keyboard.press("Enter");
