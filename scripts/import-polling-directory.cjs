@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { createClient } = require('@supabase/supabase-js');
+require('@next/env').loadEnvConfig(process.cwd());
 const source = process.argv[2];
 if (!source) throw Error('Usage: node scripts/import-polling-directory.cjs <dataset-dir> [--apply]');
 const root = path.resolve(source);
