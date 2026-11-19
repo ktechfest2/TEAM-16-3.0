@@ -51,9 +51,9 @@ export async function POST(req: Request) {
     if (!response.ok) return NextResponse.json({ error: "Speech recognition is temporarily unavailable" }, { status: 502, headers: noStore });
     stt = await response.json();
   } catch { return NextResponse.json({ error: "Speech recognition timed out or failed" }, { status: 502, headers: noStore }); }
-  const transcript = String(stt.transcript ?? stt.transcription ?? stt.text ?? "").trim().slice(0, 4000);
+  const transcript = String(stt?.data?.audio_transcript ?? stt.transcript ?? stt.transcription ?? stt.text ?? "").trim().slice(0, 4000);
   if (!transcript) return NextResponse.json({ error: "No speech was recognized" }, { status: 422, headers: noStore });
-  const code = transcript.match(/\b[A-Z0-9][A-Z0-9-]{1,31}\b/i)?.[0]?.toUpperCase();
+  const code = transcript.match(/\bSIM-PU-\d{3}\b/i)?.[0]?.toUpperCase();
   let replyText: string;
   if (!code) replyText = replies[String(language)];
   else {
@@ -65,17 +65,20 @@ export async function POST(req: Request) {
       ? data.map((row) => `${row.polling_unit_code}, ${row.public_date}: ${row.summary}`).join(". ")
       : `Information is unavailable for polling unit ${code}. This does not mean the location is safe.`;
   }
+  const voice = String(language) === "en" ? { language: "en", accent: "yoruba" }
+    : String(language) === "ha" ? { language: "ha", accent: "hausa" } : null;
+  if (!voice) return NextResponse.json({ transcript, reply: replyText, language, audioAvailable: false }, { headers: noStore });
   const ttsResponse = await fetch("https://infer.voice.intron.io/tts/v1/generate", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ text: replyText, voice_language: language, voice_accent: ({ en: "english", pcm: "pidgin", yo: "yoruba", ha: "hausa", ig: "igbo" } as Record<string, string>)[String(language)], voice_gender: "female", output_audio_format: "wav" }), signal: AbortSignal.timeout(30_000),
+    body: JSON.stringify({ text: replyText.slice(0, 4000), voice_language: voice.language, voice_accent: voice.accent, voice_gender: "female", output_audio_format: "wav" }), signal: AbortSignal.timeout(30_000),
   }).catch(() => null);
-  if (!ttsResponse?.ok) return NextResponse.json({ error: "Speech response is temporarily unavailable", transcript }, { status: 502, headers: noStore });
+  if (!ttsResponse?.ok) return NextResponse.json({ transcript, reply: replyText, language, audioAvailable: false }, { headers: noStore });
   const ttsPayload = await ttsResponse.json().catch(() => null);
   const audioPath = ttsPayload?.data?.audio_path;
   if (typeof audioPath !== "string") return NextResponse.json({ error: "Speech provider returned no audio" }, { status: 502, headers: noStore });
   let audioUrl: URL;
   try { audioUrl = new URL(audioPath); } catch { return NextResponse.json({ error: "Invalid speech response" }, { status: 502, headers: noStore }); }
-  if (audioUrl.protocol !== "https:" || !(audioUrl.hostname === "intron.io" || audioUrl.hostname.endsWith(".intron.io"))) return NextResponse.json({ error: "Untrusted speech response location" }, { status: 502, headers: noStore });
+  if (audioUrl.protocol !== "https:" || !(audioUrl.hostname === "intron.io" || audioUrl.hostname.endsWith(".intron.io") || audioUrl.hostname === "intron-transcribe.s3.amazonaws.com")) return NextResponse.json({ error: "Untrusted speech response location" }, { status: 502, headers: noStore });
   const audioResponse = await fetch(audioUrl, { signal: AbortSignal.timeout(15_000), redirect: "error" }).catch(() => null);
   if (!audioResponse?.ok) return NextResponse.json({ error: "Could not retrieve speech response" }, { status: 502, headers: noStore });
   const audioBytes = await audioResponse.arrayBuffer();

@@ -2,17 +2,23 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { FileText, Home, LayoutDashboard, ListChecks, Siren } from "lucide-react";
+import { FileText, Home, LayoutDashboard, ListChecks, Siren, Mic, CircleHelp } from "lucide-react";
 import { Logo, LogoMark } from "./logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const nav = [
+const publicNav = [
   { href: "/report", label: "Report", icon: Siren },
   { href: "/my-reports", label: "My reports", icon: FileText },
-  { href: "/monitor", label: "Monitor", icon: LayoutDashboard },
-  { href: "/coordinator", label: "Coordinator", icon: ListChecks },
+  { href: "/voice", label: "Speak with Signa", icon: Mic },
+  { href: "/help", label: "Help", icon: CircleHelp },
 ];
+const staffNav = [
+  { href: "/staff", label: "Staff access", icon: Home },
+  { href: "/monitor", label: "Incident Review", icon: LayoutDashboard },
+  { href: "/coordinator", label: "Response Coordination", icon: ListChecks },
+];
+const isStaff = (path: string) => path === "/staff" || path.startsWith("/monitor") || path.startsWith("/coordinator");
 
 function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -20,6 +26,7 @@ function isActive(pathname: string, href: string) {
 
 export function SiteHeader() {
   const pathname = usePathname() || "/";
+  const nav = isStaff(pathname) ? staffNav : publicNav;
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--hairline)] glass">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -61,12 +68,11 @@ export function SiteHeader() {
 /** Thumb-reachable navigation for the mobile reporting experience. */
 export function MobileNav() {
   const pathname = usePathname() || "/";
-  const items = [
-    { href: "/", label: "Home", icon: Home },
+  const items = isStaff(pathname) ? staffNav : [
     { href: "/my-reports", label: "Reports", icon: FileText },
     { href: "/report", label: "Report", icon: Siren, emphasis: true },
-    { href: "/monitor", label: "Monitor", icon: LayoutDashboard },
-    { href: "/coordinator", label: "Queue", icon: ListChecks },
+    { href: "/voice", label: "Speak", icon: Mic },
+    { href: "/help", label: "Help", icon: CircleHelp },
   ];
   return (
     <nav
@@ -90,7 +96,7 @@ export function MobileNav() {
                 <span
                   className={cn(
                     "grid size-8 place-items-center rounded-[10px] transition-colors",
-                    item.emphasis
+                    "emphasis" in item && item.emphasis
                       ? "bg-alert text-white shadow-[0_6px_18px_rgba(220,38,38,0.3)]"
                       : active
                         ? "bg-[rgba(15,23,42,0.07)]"
@@ -110,6 +116,8 @@ export function MobileNav() {
 }
 
 export function SiteFooter() {
+  const pathname = usePathname() || "/";
+  if (pathname === "/report") return null;
   return (
     <footer className="mt-20 border-t border-[var(--hairline)] bg-white">
       <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-12 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr]">
@@ -125,7 +133,7 @@ export function SiteFooter() {
         </div>
         <div className="space-y-2.5">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-ink">Product</p>
-          {nav.map((item) => (
+          {publicNav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

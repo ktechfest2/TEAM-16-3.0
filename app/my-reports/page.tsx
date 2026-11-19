@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Inbox, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import { browserSupabase } from "@/lib/client/supabase";
+import { citizenSupabase, getCitizenSession } from "@/lib/client/supabase";
 import { listQueuedForReporter, type QueuedReport } from "@/lib/client/outbox";
 import { category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
@@ -42,8 +42,8 @@ export default function MyReports() {
     setQueued([]);
     setNotice("");
     try {
-      const supabase = browserSupabase();
-      const { data: { session } } = await supabase.auth.getSession();
+      const supabase = citizenSupabase();
+      const { data: { session } } = await getCitizenSession();
       if (generation !== requestGeneration.current) return;
       const reporterId = session?.user.id ?? null;
       const queuedReports = await listQueuedForReporter(reporterId);
@@ -59,7 +59,7 @@ export default function MyReports() {
       });
       if (!r.ok) throw new Error("Unable to load server reports");
       const payload = await r.json() as { reports?: ServerReport[] };
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const { data: { session: currentSession } } = await getCitizenSession();
       if (generation !== requestGeneration.current) return;
       if ((currentSession?.user.id ?? null) !== reporterId) {
         requestGeneration.current += 1;
@@ -87,7 +87,7 @@ export default function MyReports() {
     let observedReporterId: string | null | undefined;
     let unsubscribe: (() => void) | undefined;
     try {
-      const supabase = browserSupabase();
+      const supabase = citizenSupabase();
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         const nextReporterId = session?.user.id ?? null;
         if (observedReporterId === undefined) {

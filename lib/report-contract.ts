@@ -13,6 +13,7 @@ export type ReportPayload = {
   occurredAt: string | null;
   clientCreatedAt: string | null;
   aiProcessingConsent: boolean;
+  fictionalTestSubmission?: boolean;
 };
 
 export class InputError extends Error {
@@ -38,14 +39,15 @@ export function parseReport(input: unknown): ReportPayload {
   if (!isUuid(p.id) || !isUuid(p.pollingUnitId)) throw new InputError("Invalid report or polling-unit ID");
   if (typeof p.category !== "string" || !categories.includes(p.category as ReportCategory))
     throw new InputError("Unknown incident category");
-  if (typeof p.description !== "string" || p.description.trim().length < 3 || p.description.length > 1600)
-    throw new InputError("Description must be between 3 and 1600 characters");
+  if (p.description !== undefined && (typeof p.description !== "string" || p.description.length > 1600))
+    throw new InputError("Description must be 1600 characters or fewer");
   return {
     id: p.id.toLowerCase(), pollingUnitId: p.pollingUnitId.toLowerCase(),
-    category: p.category as ReportCategory, description: p.description.trim(),
+    category: p.category as ReportCategory, description: typeof p.description === "string" ? p.description.trim() : "",
     occurredAt: normalizeOptionalDate(p.occurredAt, "occurredAt"),
     clientCreatedAt: normalizeOptionalDate(p.clientCreatedAt, "clientCreatedAt"),
     aiProcessingConsent: p.aiProcessingConsent === true,
+    ...(p.fictionalTestSubmission === true ? { fictionalTestSubmission: true } : {}),
   };
 }
 
@@ -54,6 +56,7 @@ export function canonicalPayload(payload: ReportPayload): string {
     payload.pollingUnitId, payload.category, payload.description,
     payload.occurredAt, payload.clientCreatedAt,
     payload.aiProcessingConsent,
+    ...(payload.fictionalTestSubmission ? [true] : []),
   ]);
 }
 

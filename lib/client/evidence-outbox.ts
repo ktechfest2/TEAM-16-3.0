@@ -1,6 +1,6 @@
 "use client";
 
-import { browserSupabase } from "./supabase";
+import { citizenSupabase, getCitizenSession } from "./supabase";
 
 export type EvidenceUploadState = "waiting_for_report" | "pending" | "uploading" | "failed" | "received";
 
@@ -129,7 +129,7 @@ export async function flushQueuedEvidence(
   for (const record of records) {
     if (record.state !== "pending" && record.state !== "failed" && record.state !== "uploading") continue;
     try {
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const { data: { session } } = await getCitizenSession();
       if (!session || session.user.id !== reporterId || session.access_token !== accessToken) {
         errors.push("Reporter session changed; pending photos were not uploaded.");
         break;

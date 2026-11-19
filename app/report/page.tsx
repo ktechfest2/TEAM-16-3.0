@@ -7,7 +7,7 @@ import {
 import { categories, parseReport, type ReportPayload } from "@/lib/report-contract";
 import { flushQueued, listQueuedForReporter, queueReport } from "@/lib/client/outbox";
 import { flushQueuedEvidence, listEvidenceForReporter, queueEvidence, retryEvidence, type QueuedEvidence } from "@/lib/client/evidence-outbox";
-import { bearerHeaders, browserSupabase } from "@/lib/client/supabase";
+import { bearerHeaders, citizenSupabase, getCitizenSession } from "@/lib/client/supabase";
 import { categoryMeta, category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,19 +25,16 @@ type Unit = { id: string; code: string; name: string; is_simulated: boolean };
 type SelectedPhoto = { evidenceId: string; file: File };
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-const HOLD_MS = 3000;
 
 export default function ReportPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitId, setUnitId] = useState("");
-  const [category, setCategory] = useState<string>("disruption");
+  const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState("");
-  const [aiProcessingConsent, setAiProcessingConsent] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [holding, setHolding] = useState(false);
   const [online, setOnline] = useState(true);
   const [lastSavedRef, setLastSavedRef] = useState("");
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
@@ -45,16 +42,16 @@ export default function ReportPage() {
   const [photosForReporterId, setPhotosForReporterId] = useState<string | null>(null);
   const [evidenceRecords, setEvidenceRecords] = useState<QueuedEvidence[]>([]);
   const [evidenceError, setEvidenceError] = useState("");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const pendingGeneration = useRef(0);
   const syncGeneration = useRef(0);
+  const submitting = useRef(false);
 
   const refreshPending = useCallback(async () => {
     const generation = ++pendingGeneration.current;
     try {
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const { data: { session } } = await getCitizenSession();
       const records = await listQueuedForReporter(session?.user.id ?? null);
       if (generation === pendingGeneration.current) setPending(records.length);
     } catch {
@@ -64,7 +61,7 @@ export default function ReportPage() {
 
   const refreshEvidence = useCallback(async () => {
     try {
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const { data: { session } } = await getCitizenSession();
       setEvidenceRecords(await listEvidenceForReporter(session?.user.id ?? null));
     } catch {
       setEvidenceRecords([]);
@@ -73,6 +70,8 @@ export default function ReportPage() {
   }, []);
 
   useEffect(() => {
+    const lastUnit = localStorage.getItem("signa:last-polling-unit");
+    if (lastUnit) setUnitId(lastUnit);
     const cached = localStorage.getItem("signa-units");
     if (cached) { try { setUnits(JSON.parse(cached)); } catch {} }
     void fetch("/api/polling-units").then(r=>r.json()).then(data=>{
@@ -80,7 +79,7 @@ export default function ReportPage() {
     }).catch(()=>{});
     let unsubscribe: (() => void) | undefined;
     try {
-      const { data: { subscription } } = browserSupabase().auth.onAuthStateChange(() => {
+      const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange(() => {
         pendingGeneration.current += 1;
         syncGeneration.current += 1;
         setPending(0);
@@ -107,10 +106,9 @@ export default function ReportPage() {
   async function sync() {
     const generation = ++syncGeneration.current;
     try {
-      const supabase = browserSupabase();
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      const { data: { session: initialSession } } = await getCitizenSession();
       const result = await flushQueued();
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const { data: { session: currentSession } } = await getCitizenSession();
       if (generation !== syncGeneration.current || (currentSession?.user.id ?? null) !== (initialSession?.user.id ?? null)) {
         await refreshPending();
         return;
@@ -128,20 +126,21 @@ export default function ReportPage() {
   }
 
   async function submit() {
-    if (busy) return;
+    if (submitting.current || !ready) return;
+    submitting.current = true;
     setBusy(true); setError("");
     try {
       const payload: ReportPayload = parseReport({
         id: crypto.randomUUID(), pollingUnitId: unitId, category,
-        description, clientCreatedAt: new Date().toISOString(), occurredAt: null, aiProcessingConsent,
+        description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
+        aiProcessingConsent: true, fictionalTestSubmission: true,
       });
       let reporterId: string | null = null;
       try {
-        const supabase = browserSupabase();
-        let { data: { session } } = await supabase.auth.getSession();
+        let { data: { session } } = await getCitizenSession();
         if (!session && navigator.onLine) {
           await bearerHeaders();
-          ({ data: { session } } = await supabase.auth.getSession());
+          ({ data: { session } } = await getCitizenSession());
         }
         reporterId = session?.user.id ?? null;
       } catch {
@@ -171,7 +170,6 @@ export default function ReportPage() {
         }
       }
       setDescription("");
-      setAiProcessingConsent(false);
       setLastSavedRef(shortRef(payload.id));
       setNotice(reporterId
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
@@ -180,7 +178,7 @@ export default function ReportPage() {
       await refreshEvidence();
       if (navigator.onLine) await sync();
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
-    finally { setBusy(false); }
+    finally { submitting.current = false; setBusy(false); }
   }
 
   function addPhotos(files: FileList | null) {
@@ -203,7 +201,7 @@ export default function ReportPage() {
   async function retryPhoto(evidenceId: string) {
     setEvidenceError("");
     try {
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const { data: { session } } = await getCitizenSession();
       if (!session) throw new Error("Sign in to the original reporter session to retry this photo.");
       await retryEvidence(evidenceId, session.user.id);
       await sync();
@@ -216,7 +214,7 @@ export default function ReportPage() {
     if (!photosForReportId) return;
     setEvidenceError("");
     try {
-      const { data: { session } } = await browserSupabase().auth.getSession();
+      const { data: { session } } = await getCitizenSession();
       const currentReporterId = session?.user.id ?? null;
       if (currentReporterId !== photosForReporterId)
         throw new Error("Sign back in to the reporter session that saved the alert before retrying these photos.");
@@ -240,12 +238,9 @@ export default function ReportPage() {
     }
   }
 
-  function startHold() { if(busy) return; setHolding(true); timer.current = setTimeout(()=>{ setHolding(false); void submit(); }, HOLD_MS); }
-  function stopHold() { setHolding(false); if(timer.current) {clearTimeout(timer.current);timer.current=null;} }
-
-  const ready = !!unitId && description.trim().length >= 3;
+  const ready = !!unitId && categories.includes(category as (typeof categories)[number]);
   const selectedUnit = units.find((u) => u.id === unitId);
-  const activeCategory = categoryOf(category);
+  const activeCategory = category ? categoryOf(category) : null;
 
   return (
     <PageShell width="narrow" className="pb-16">
@@ -284,7 +279,7 @@ export default function ReportPage() {
               htmlFor="unit"
               help="This build uses fictional polling units. If the list is empty, connect once to load it."
             >
-              <Select id="unit" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
+              <Select id="unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value); else localStorage.removeItem("signa:last-polling-unit"); }}>
                 <option value="">Select simulated polling unit</option>
                 {units.map((u) => (
                   <option key={u.id} value={u.id}>
@@ -342,7 +337,7 @@ export default function ReportPage() {
               })}
             </div>
           </fieldset>
-          <p className="mt-3.5 text-[13px] leading-relaxed text-slate-ink/75">{activeCategory.description}</p>
+          {activeCategory && <p className="mt-3 text-[13px] text-slate-ink/75">{activeCategory.description}</p>}
         </Card>
       </Reveal>
 
@@ -352,7 +347,7 @@ export default function ReportPage() {
           <StepLabel index={3} title="Describe what you observed" />
           <div className="mt-4">
             <Field
-              label="Your account"
+              label="More details (optional)"
               htmlFor="description"
               hint={`${description.length} / 1600`}
               help="Describe only what you saw or heard. Do not share a person's private details, and do not accuse anyone by name."
@@ -366,10 +361,7 @@ export default function ReportPage() {
               />
             </Field>
           </div>
-          <label className="mt-4 flex items-start gap-3 text-[13px] leading-relaxed text-slate-ink/80">
-            <input type="checkbox" checked={aiProcessingConsent} onChange={(event) => setAiProcessingConsent(event.target.checked)} className="mt-1 size-4 accent-primary" />
-            <span>Optional: I consent to AI generating a provisional observation summary from this report and its evidence. AI outputs are uncertain and will not verify the report; an authorised human remains responsible for review.</span>
-          </label>
+          <p className="mt-3 text-[12px] leading-relaxed text-slate-ink/80">Fictional test reports submitted here may be assessed by AI, including attached photos. A human reviewer decides what is supported. Do not include real personal information.</p>
         </Card>
       </Reveal>
 
@@ -439,29 +431,21 @@ export default function ReportPage() {
               prove that it occurred.
             </p>
 
-            <HoldButton
-              holding={holding}
-              busy={busy}
-              disabled={busy || !ready}
-              onStart={startHold}
-              onStop={stopHold}
-            />
-
             <Button
               type="button"
-              variant="secondary"
+              variant="primary"
               size="lg"
               full
-              className="mt-2.5"
+              className="mt-4"
               disabled={busy || !ready}
               onClick={() => void submit()}
             >
-              Accessible option — save alert now
+              {busy ? "Saving alert…" : "Submit alert"}
             </Button>
 
             {!ready && (
               <p className="mt-3 text-center text-[12.5px] text-muted-ink">
-                Select a polling unit and describe what you saw to continue.
+                Select a polling unit and incident category to continue.
               </p>
             )}
           </div>
@@ -562,61 +546,5 @@ function StepLabel({ index, title }: { index: number; title: string }) {
       </span>
       <h2 className="text-[17px] font-semibold leading-tight">{title}</h2>
     </div>
-  );
-}
-
-/**
- * Hold-to-send guard. A deliberate 3-second press prevents accidental alerts
- * on a phone in a pocket or a shaking hand, and the fill makes the wait legible.
- */
-function HoldButton({
-  holding, busy, disabled, onStart, onStop,
-}: {
-  holding: boolean;
-  busy: boolean;
-  disabled: boolean;
-  onStart: () => void;
-  onStop: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onPointerDown={onStart}
-      onPointerUp={onStop}
-      onPointerLeave={onStop}
-      onPointerCancel={onStop}
-      className={cn(
-        "relative mt-5 flex min-h-[64px] w-full items-center justify-center overflow-hidden rounded-[16px] bg-alert px-6 text-[16px] font-semibold text-white shadow-[0_10px_30px_rgba(220,38,38,0.26)] transition-all duration-200 select-none",
-        "disabled:bg-[rgba(15,23,42,0.08)] disabled:text-muted-ink disabled:shadow-none",
-        holding && "scale-[0.99]",
-      )}
-      aria-busy={busy || undefined}
-    >
-      {holding && (
-        <motion.span
-          className="absolute inset-y-0 left-0 bg-white/22"
-          initial={{ width: "0%" }}
-          animate={{ width: "100%" }}
-          transition={{ duration: HOLD_MS / 1000, ease: "linear" }}
-          aria-hidden
-        />
-      )}
-      <span className="relative flex items-center gap-2.5">
-        {busy ? (
-          <>
-            <Loader2 className="size-5 animate-spin" aria-hidden />
-            Saving…
-          </>
-        ) : holding ? (
-          "Keep holding…"
-        ) : (
-          <>
-            <Siren className="size-5" aria-hidden />
-            Hold 3 seconds to send alert
-          </>
-        )}
-      </span>
-    </button>
   );
 }

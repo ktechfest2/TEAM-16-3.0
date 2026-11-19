@@ -33,6 +33,11 @@ export default function VoiceEnquiryPage() {
           const form = new FormData(); form.append("audio", blob, "enquiry.webm"); form.append("language", language);
           const response = await fetch("/api/voice/turn", { method: "POST", body: form });
           if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "Voice service unavailable"); }
+          if (response.headers.get("content-type")?.includes("application/json")) {
+            const result = await response.json();
+            setTranscript(result.transcript || ""); setReply(result.reply || "");
+            return;
+          }
           setTranscript(decodeURIComponent(response.headers.get("X-Signa-Transcript") || ""));
           setReply(decodeURIComponent(response.headers.get("X-Signa-Reply") || ""));
           const audio = await response.blob(); const url = URL.createObjectURL(audio);

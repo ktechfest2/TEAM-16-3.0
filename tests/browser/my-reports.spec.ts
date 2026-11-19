@@ -1,6 +1,6 @@
 import { expect, test, type BrowserContext, type Page, type Route } from "@playwright/test";
 
-const STORAGE_KEY = "sb-fixture-auth-token";
+const STORAGE_KEY = "signa-citizen-auth-v1";
 const REPORTER_A = "00000000-0000-4000-8000-000000000001";
 const REPORTER_B = "00000000-0000-4000-8000-000000000002";
 const POLLING_UNIT = "00000000-0000-4000-8000-000000000100";

@@ -142,7 +142,7 @@ export default function MonitorPage() {
     return (
       <PageShell>
         <StaffGate
-          title="Monitor workspace"
+          title="Incident Review"
           description="Review incoming reports, group related observations into a case and record a written review outcome."
           onSignedIn={load}
         />
@@ -176,7 +176,7 @@ export default function MonitorPage() {
     <PageShell width="wide" className="pb-16">
       <Reveal>
         <PageHeader
-          eyebrow={<><LayoutDashboard className="size-3.5" aria-hidden /> Monitor workspace</>}
+          eyebrow={<><LayoutDashboard className="size-3.5" aria-hidden /> Incident Review</>}
           title="Review inbox"
           description="Incoming reports are unverified allegations. A case exists only when a monitor groups reports and records a written review."
           actions={

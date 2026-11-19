@@ -139,7 +139,7 @@ export default function CoordinatorPage() {
     return (
       <PageShell>
         <StaffGate
-          title="Coordinator queue"
+          title="Response Coordination"
           description="Acknowledge the cases routed to you and log internal follow-up. Coordinators cannot change a review outcome."
           onSignedIn={load}
         />

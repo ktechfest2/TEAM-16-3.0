@@ -1,6 +1,6 @@
 "use client";
 import type { ReportPayload } from "../report-contract";
-import { browserSupabase } from "./supabase";
+import { citizenSupabase, getCitizenSession } from "./supabase";
 import { markEvidenceReportReceived } from "./evidence-outbox";
 export type QueuedReport = {
   payload: ReportPayload;
@@ -54,7 +54,7 @@ export async function flushQueued(): Promise<{ delivered: string[]; pending: num
   let reporterId: string | null = null;
   let accessToken: string | null = null;
   try {
-    const { data: { session } } = await browserSupabase().auth.getSession();
+    const { data: { session } } = await getCitizenSession();
     reporterId = session?.user.id ?? null;
     accessToken = session?.access_token ?? null;
   } catch {
