@@ -25,7 +25,7 @@ type ServerReport = {
   caseStatus: { reviewState: ReviewState; responseState: ResponseState } | null;
 };
 
-const NO_SESSION_NOTICE = "No active online session. Saved offline reports appear here after you reconnect and submit.";
+const NO_SESSION_NOTICE = "No active online session. Drafts saved without a reporter session stay hidden on shared devices and cannot be linked or delivered automatically. Keep this browser private; clearing its data deletes them. No recovery is available yet.";
 
 export default function MyReports() {
   const [reports, setReports] = useState<ServerReport[]>([]);
