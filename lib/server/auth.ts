@@ -1,6 +1,7 @@
 import "server-only";
 import { adminClient, identityClient } from "./supabase";
-export type Role = "reporter" | "monitor" | "coordinator" | "admin";
+import { trustedRole, type Role } from "@/lib/role-contract";
+export type { Role } from "@/lib/role-contract";
 export type Viewer = { userId: string; role: Role };
 export class AccessError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -12,8 +13,8 @@ export async function getViewer(req: Request, permitted?: Role[]): Promise<Viewe
   if (error || !data.user) throw new AccessError(401, "Session expired or invalid");
   const { data: profile, error: profileError } = await adminClient()
     .from("profiles").select("role").eq("id", data.user.id).maybeSingle();
-  if (profileError || !profile?.role) throw new AccessError(403, "No authorised profile");
-  const role = profile.role as Role;
+  const role = profileError ? null : trustedRole(profile);
+  if (!role) throw new AccessError(403, "No authorised profile");
   if (permitted && !permitted.includes(role)) throw new AccessError(403, "Not authorised");
   return { userId: data.user.id, role };
 }

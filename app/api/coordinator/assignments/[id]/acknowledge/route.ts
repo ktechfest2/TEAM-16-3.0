@@ -22,7 +22,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const parsed = parseNote(await req.json().catch(() => null));
     const db = adminClient();
 
-    const { error: actionError } = await db.rpc("signa_acknowledge_case", {
+    const { data: duplicate, error: actionError } = await db.rpc("signa_acknowledge_case", {
       p_actor: viewer.userId, p_assignment: id, p_note: parsed.note,
     });
     if (actionError) {
@@ -33,7 +33,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const { data: assignment, error: lookupError } = await db.from("assignments")
       .select("id,acknowledged_at").eq("id", id).single();
     if (lookupError) throw lookupError;
-    return NextResponse.json({ id: assignment.id, acknowledgedAt: assignment.acknowledged_at, duplicate: false }, { headers: noStore });
+    return NextResponse.json(
+      { id: assignment.id, acknowledgedAt: assignment.acknowledged_at, duplicate: duplicate === null },
+      { headers: noStore },
+    );
   } catch (e) {
     return errorResponse(e);
   }
