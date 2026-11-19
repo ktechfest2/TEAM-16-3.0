@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { bearerHeaders } from "@/lib/client/supabase";
 
 const options = [
   ["en", "English"], ["pcm", "Nigerian Pidgin"], ["yo", "Yoruba"], ["ha", "Hausa"], ["ig", "Igbo"],
@@ -31,7 +32,8 @@ export default function VoiceEnquiryPage() {
         setBusy(true);
         try {
           const form = new FormData(); form.append("audio", blob, "enquiry.webm"); form.append("language", language);
-          const response = await fetch("/api/voice/turn", { method: "POST", body: form });
+          const headers = await bearerHeaders();
+          const response = await fetch("/api/voice/turn", { method: "POST", headers, body: form });
           if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || "Voice service unavailable"); }
           if (response.headers.get("content-type")?.includes("application/json")) {
             const result = await response.json();

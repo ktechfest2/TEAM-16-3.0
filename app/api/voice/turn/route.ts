@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { noStore, RequestLimitedError } from "@/lib/server/responses";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 import { adminClient } from "@/lib/server/supabase";
+import { getViewer } from "@/lib/server/auth";
+import { errorResponse } from "@/lib/server/responses";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +17,10 @@ const replies: Record<string, string> = {
   ig: "Enwere m ike ịza ajụjụ izugbe gbasara Signa. Ọ bụrụ na enweghị ozi ọha akwadoro, ozi adịghị. Nke a apụtaghị na ebe ahụ dị nchebe.",
 };
 export async function POST(req: Request) {
-  try { await enforceAbuseLimit(req, "", { scope: "voice", reporterMax: 10, ipMax: 20, windowSeconds: 600 }); }
+  let reporterId: string;
+  try { reporterId = (await getViewer(req, ["reporter"])).userId; }
+  catch (error) { return errorResponse(error); }
+  try { await enforceAbuseLimit(req, reporterId, { scope: "voice", reporterMax: 10, ipMax: 20, windowSeconds: 600 }); }
   catch (error) {
     const limited = error instanceof RequestLimitedError;
     return NextResponse.json({ error: limited ? "Too many voice requests" : "Voice service is temporarily unavailable" }, { status: limited ? 429 : 503, headers: noStore });
