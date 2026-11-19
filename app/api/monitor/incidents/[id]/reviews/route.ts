@@ -21,6 +21,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       p_actor: viewer.userId, p_case_id: id, p_outcome: parsed.outcome, p_reason: parsed.reason,
     });
     if (reviewError) {
+      if (/Reviewer cannot verify/i.test(reviewError.message))
+        return NextResponse.json(
+          { error: { code: "ACCESS", message: "An independent reviewer is required" } },
+          { status: 403, headers: noStore },
+        );
       if (/Unknown case/i.test(reviewError.message))
         return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
       if (/locked after assignment/i.test(reviewError.message))
