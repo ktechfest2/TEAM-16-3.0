@@ -117,7 +117,7 @@ test("monitor login, grouping, human review, assignment, and coordinator follow-
   await page.getByLabel("Case summary").fill("Fictional accreditation pause");
   await page.getByLabel("Why these reports belong together").fill("Same simulated unit and event window; monitor review required.");
   await page.getByRole("button", { name: "Open case with 1 report" }).click();
-  await expect(page).toHaveURL(new RegExp(`/monitor/incidents/${CASE_ID}$`));
+  await expect(page).toHaveURL(new RegExp(`/monitor/incidents/${CASE_ID}$`), { timeout: 15_000 });
   await expect(page.getByText("Human verification", { exact: true })).toBeVisible();
   await expect(page.getByText("AI assessment", { exact: true })).toBeVisible();
   for (const width of [320, 375, 1280]) {

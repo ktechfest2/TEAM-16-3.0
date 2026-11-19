@@ -122,7 +122,6 @@ export default function MonitorPage() {
       setSelected([]);
       setSummary("");
       setReason("");
-      await load();
       router.push(`/monitor/incidents/${created.id}`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Could not group these reports");
