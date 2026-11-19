@@ -66,7 +66,7 @@ export async function flushQueued(): Promise<{ delivered: string[]; pending: num
     return { delivered, pending: records.length, errors };
   }
   const records = await listQueuedForReporter(reporterId);
-  if (!accessToken) {
+  if (!accessToken || !reporterId) {
     if (records.length) errors.push("Saved offline reports have no reporter session. They remain on this device.");
     return { delivered, pending: records.length, errors };
   }

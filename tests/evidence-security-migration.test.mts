@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const sql = readFileSync(new URL("../supabase/migrations/20261119160000_evidence_review_refs.sql", import.meta.url), "utf8");
+const sql = readFileSync(new URL("../supabase/migrations/20261119151500_evidence_review_refs.sql", import.meta.url), "utf8");
 
 // These are source-pattern checks only. They do not establish that the migration
 // has been applied or that PostgreSQL executed these policies/functions.
@@ -32,4 +32,15 @@ test("evidence migration is additive for rolling review deployments and fences u
   assert.match(sql, /upload_lease_expires_at timestamptz/i);
   assert.match(sql, /cleanup_token uuid/i);
   assert.match(sql, /'uploading'[\s\S]*?'cleaning'/i);
+});
+
+test("migration order creates the limiter before extending it and agrees on scopes", () => {
+  const extension = readFileSync(new URL("../supabase/migrations/20261119152000_ai_voice_rate_limit_scopes.sql", import.meta.url), "utf8");
+  const typescript = readFileSync(new URL("../lib/server/rate-limit.ts", import.meta.url), "utf8");
+  assert.match(sql, /scope in \('report','evidence'\)/i);
+  assert.match(sql, /p_scope not in \('report','evidence'\)/i);
+  assert.match(extension, /scope in \('report','evidence','ai_assessment','voice'\)/i);
+  assert.match(extension, /p_scope not in \('report','evidence','ai_assessment','voice'\)/i);
+  assert.match(typescript, /"report" \| "evidence" \| "ai_assessment" \| "voice"/);
+  assert.doesNotMatch(sql, /'ai'\s*[,)]/);
 });

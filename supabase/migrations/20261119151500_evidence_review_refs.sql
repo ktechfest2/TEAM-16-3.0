@@ -3,7 +3,7 @@
 begin;
 
 create table if not exists public.signa_rate_limits (
-  scope text not null check (scope in ('report','evidence','voice','ai')),
+  scope text not null check (scope in ('report','evidence')),
   key_hash text not null check (key_hash ~ '^[0-9a-f]{64}$'),
   window_started_at timestamptz not null,
   hit_count integer not null check (hit_count > 0),
@@ -24,7 +24,7 @@ declare
   v_window timestamptz;
   v_hits integer;
 begin
-  if p_scope is null or p_scope not in ('report','evidence','voice','ai') or
+  if p_scope is null or p_scope not in ('report','evidence') or
      p_key_hash is null or p_key_hash !~ '^[0-9a-f]{64}$' or
      p_limit is null or p_limit < 1 or p_limit > 1000 or
      p_window_seconds is null or p_window_seconds < 30 or p_window_seconds > 86400 then

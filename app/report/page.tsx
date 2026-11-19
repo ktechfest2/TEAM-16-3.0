@@ -19,10 +19,10 @@ import { SafetyNotice } from "@/components/signa/safety-notice";
 import { DeliveryChip } from "@/components/signa/status-chip";
 import { AnimatePresence, Reveal, motion } from "@/components/signa/motion";
 import { cn, shortRef } from "@/lib/utils";
+import { MAX_EVIDENCE_BYTES } from "@/lib/evidence-contract";
 
 type Unit = { id: string; code: string; name: string; is_simulated: boolean };
 type SelectedPhoto = { evidenceId: string; file: File };
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const HOLD_MS = 3000;
@@ -190,8 +190,8 @@ export default function ReportPage() {
     for (const file of Array.from(files)) {
       if (!PHOTO_TYPES.has(file.type)) {
         issues.push(`${file.name}: choose a JPEG, PNG or WebP image.`);
-      } else if (file.size < 1 || file.size > MAX_PHOTO_BYTES) {
-        issues.push(`${file.name}: images must be no larger than 5 MB.`);
+      } else if (file.size < 1 || file.size > MAX_EVIDENCE_BYTES) {
+        issues.push(`${file.name}: images must be no larger than 4 MiB.`);
       } else {
         accepted.push({ evidenceId: crypto.randomUUID(), file });
       }
@@ -380,7 +380,7 @@ export default function ReportPage() {
             <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-trust-soft text-trust"><Camera className="size-4" aria-hidden /></span>
             <div className="min-w-0 flex-1">
               <h2 className="text-[17px] font-semibold leading-tight">Optional photo evidence</h2>
-              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-ink/75">Photos upload separately after the server confirms this report. Each image must be JPEG, PNG or WebP and no larger than 5 MB. Never put yourself at risk to collect evidence.</p>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-ink/75">Photos upload separately after the server confirms this report. Each image must be JPEG, PNG or WebP and no larger than 4 MiB. Never put yourself at risk to collect evidence.</p>
               <input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Take a photo" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
               <input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Choose photos from gallery" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
               <div className="mt-4 flex flex-wrap gap-2">

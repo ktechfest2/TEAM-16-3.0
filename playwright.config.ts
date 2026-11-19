@@ -15,12 +15,15 @@ export default defineConfig({
     baseURL,
     browserName: "chromium",
     headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+      ? { launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } }
+      : {}),
     trace: "off",
     video: "off",
     screenshot: "off",
   },
   webServer: {
-    command: "npm run dev -- --webpack --port 3210",
+    command: process.env.SIGNA_E2E_SERVER_COMMAND ?? "npm run dev -- --webpack --port 3210",
     url: `${baseURL}/my-reports`,
     reuseExistingServer: false,
     timeout: 120_000,
@@ -30,7 +33,7 @@ export default defineConfig({
       SUPABASE_SECRET_KEY: "fixture_server_key_only",
       SUPABASE_SERVICE_ROLE_KEY: "fixture_server_key_only",
       NEXT_TELEMETRY_DISABLED: "1",
-      SIGNA_NEXT_DIST_DIR: ".next-e2e",
+      SIGNA_NEXT_DIST_DIR: process.env.SIGNA_NEXT_DIST_DIR ?? ".next-e2e",
     },
   },
 });
