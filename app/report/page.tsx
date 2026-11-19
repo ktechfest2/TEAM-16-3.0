@@ -121,7 +121,9 @@ export default function ReportPage() {
       await queueReport(payload, reporterId);
       setDescription("");
       setLastSavedRef(shortRef(payload.id));
-      setNotice(`Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`);
+      setNotice(reporterId
+        ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
+        : `Saved on this device (${payload.id.slice(0, 8)}), but no reporter session was available. This draft cannot be linked or synced automatically; keep this browser private and do not clear its data. NOT delivered.`);
       await refreshPending();
       if (navigator.onLine) await sync();
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
@@ -302,6 +304,9 @@ export default function ReportPage() {
                 </p>
                 <p className="text-[12px] text-slate-ink/70">
                   Waiting means saved locally, not yet confirmed by the server.
+                </p>
+                <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-slate-ink/70">
+                  Drafts saved before a reporter session exists are hidden when signed out and cannot be linked or delivered automatically. Keep this browser private; clearing its data deletes them. No recovery is available yet.
                 </p>
               </div>
             </div>
