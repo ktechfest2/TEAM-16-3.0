@@ -1,6 +1,7 @@
 "use client";
 import type { ReportPayload } from "../report-contract";
 import { browserSupabase } from "./supabase";
+import { markEvidenceReportReceived } from "./evidence-outbox";
 export type QueuedReport = {
   payload: ReportPayload;
   queuedAt: string;
@@ -12,10 +13,11 @@ const DB = "signa-offline-v1";
 const STORE = "reports";
 export function openOutbox(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "payload.id" });
+      if (!db.objectStoreNames.contains("evidence")) db.createObjectStore("evidence", { keyPath: "evidenceId" });
     };
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
@@ -77,6 +79,7 @@ export async function flushQueued(): Promise<{ delivered: string[]; pending: num
         body: JSON.stringify(record.payload), cache: "no-store",
       });
       if (response.ok) {
+        await markEvidenceReportReceived(record.payload.id, reporterId);
         await removeQueued(record.payload.id);
         delivered.push(record.payload.id);
       } else {

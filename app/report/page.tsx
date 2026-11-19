@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, CheckCircle2, CloudUpload, Loader2, MapPin, RefreshCw, Siren, Wifi, WifiOff,
+  ArrowRight, Camera, CheckCircle2, CloudUpload, ImagePlus, Loader2, MapPin, RefreshCw, Siren, Wifi, WifiOff,
 } from "lucide-react";
 import { categories, parseReport, type ReportPayload } from "@/lib/report-contract";
 import { flushQueued, listQueuedForReporter, queueReport } from "@/lib/client/outbox";
+import { flushQueuedEvidence, listEvidenceForReporter, queueEvidence, retryEvidence, type QueuedEvidence } from "@/lib/client/evidence-outbox";
 import { bearerHeaders, browserSupabase } from "@/lib/client/supabase";
 import { categoryMeta, category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,9 @@ import { AnimatePresence, Reveal, motion } from "@/components/signa/motion";
 import { cn, shortRef } from "@/lib/utils";
 
 type Unit = { id: string; code: string; name: string; is_simulated: boolean };
+type SelectedPhoto = { evidenceId: string; file: File };
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const HOLD_MS = 3000;
 
@@ -36,7 +40,14 @@ export default function ReportPage() {
   const [holding, setHolding] = useState(false);
   const [online, setOnline] = useState(true);
   const [lastSavedRef, setLastSavedRef] = useState("");
+  const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
+  const [photosForReportId, setPhotosForReportId] = useState<string | null>(null);
+  const [photosForReporterId, setPhotosForReporterId] = useState<string | null>(null);
+  const [evidenceRecords, setEvidenceRecords] = useState<QueuedEvidence[]>([]);
+  const [evidenceError, setEvidenceError] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
   const pendingGeneration = useRef(0);
   const syncGeneration = useRef(0);
 
@@ -48,6 +59,16 @@ export default function ReportPage() {
       if (generation === pendingGeneration.current) setPending(records.length);
     } catch {
       if (generation === pendingGeneration.current) setPending(0);
+    }
+  }, []);
+
+  const refreshEvidence = useCallback(async () => {
+    try {
+      const { data: { session } } = await browserSupabase().auth.getSession();
+      setEvidenceRecords(await listEvidenceForReporter(session?.user.id ?? null));
+    } catch {
+      setEvidenceRecords([]);
+      setEvidenceError("Local photo storage is unavailable in this browser.");
     }
   }, []);
 
@@ -70,6 +91,7 @@ export default function ReportPage() {
       // Pending local records still remain durable if auth is not configured.
     }
     void refreshPending();
+    void refreshEvidence();
     setOnline(navigator.onLine);
     const onOnline = () => { setOnline(true); void sync(); };
     const onOffline = () => setOnline(false);
@@ -80,7 +102,7 @@ export default function ReportPage() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [refreshPending]);
+  }, [refreshEvidence, refreshPending]);
 
   async function sync() {
     const generation = ++syncGeneration.current;
@@ -94,6 +116,12 @@ export default function ReportPage() {
         return;
       }
       await refreshPending();
+      if (currentSession?.user.id && currentSession.access_token) {
+        const evidenceResult = await flushQueuedEvidence(currentSession.user.id, currentSession.access_token);
+        if (evidenceResult.errors.length) setEvidenceError(evidenceResult.errors.join("; "));
+        else if (evidenceResult.received.length) setEvidenceError("");
+      }
+      await refreshEvidence();
       if (result.delivered.length) setNotice(`${result.delivered.length} report(s) received by the server.`);
       if (result.errors.length) setError(result.errors.join("; "));
     } catch { setError("Could not check pending reports. They remain saved locally."); }
@@ -120,6 +148,28 @@ export default function ReportPage() {
         // Offline reports without a session remain unassigned and are never shown to another reporter.
       }
       await queueReport(payload, reporterId);
+      if (selectedPhotos.length && !photosForReportId) {
+        setPhotosForReportId(payload.id);
+        setPhotosForReporterId(reporterId);
+        try {
+          await queueEvidence(selectedPhotos.map(({ evidenceId, file }) => ({
+            evidenceId,
+            reportId: payload.id,
+            reporterId,
+            file,
+            fileName: file.name || "photo",
+            mimeType: file.type,
+            byteSize: file.size,
+            state: "waiting_for_report" as const,
+          })));
+          setSelectedPhotos([]);
+          setPhotosForReportId(null);
+          setPhotosForReporterId(null);
+          setEvidenceError("");
+        } catch {
+          setEvidenceError("The alert was saved, but this browser could not save the selected photo for retry. Keep this page open and try again.");
+        }
+      }
       setDescription("");
       setAiProcessingConsent(false);
       setLastSavedRef(shortRef(payload.id));
@@ -127,9 +177,67 @@ export default function ReportPage() {
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
         : `Saved on this device (${payload.id.slice(0, 8)}), but no reporter session was available. This draft cannot be linked or synced automatically; keep this browser private and do not clear its data. NOT delivered.`);
       await refreshPending();
+      await refreshEvidence();
       if (navigator.onLine) await sync();
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
     finally { setBusy(false); }
+  }
+
+  function addPhotos(files: FileList | null) {
+    if (!files?.length) return;
+    const accepted: SelectedPhoto[] = [];
+    const issues: string[] = [];
+    for (const file of Array.from(files)) {
+      if (!PHOTO_TYPES.has(file.type)) {
+        issues.push(`${file.name}: choose a JPEG, PNG or WebP image.`);
+      } else if (file.size < 1 || file.size > MAX_PHOTO_BYTES) {
+        issues.push(`${file.name}: images must be no larger than 5 MB.`);
+      } else {
+        accepted.push({ evidenceId: crypto.randomUUID(), file });
+      }
+    }
+    setSelectedPhotos((current) => [...current, ...accepted]);
+    setEvidenceError(issues.join(" "));
+  }
+
+  async function retryPhoto(evidenceId: string) {
+    setEvidenceError("");
+    try {
+      const { data: { session } } = await browserSupabase().auth.getSession();
+      if (!session) throw new Error("Sign in to the original reporter session to retry this photo.");
+      await retryEvidence(evidenceId, session.user.id);
+      await sync();
+    } catch (e) {
+      setEvidenceError(e instanceof Error ? e.message : "Could not retry this photo.");
+    }
+  }
+
+  async function saveSelectedPhotosForRetry() {
+    if (!photosForReportId) return;
+    setEvidenceError("");
+    try {
+      const { data: { session } } = await browserSupabase().auth.getSession();
+      const currentReporterId = session?.user.id ?? null;
+      if (currentReporterId !== photosForReporterId)
+        throw new Error("Sign back in to the reporter session that saved the alert before retrying these photos.");
+      await queueEvidence(selectedPhotos.map(({ evidenceId, file }) => ({
+        evidenceId,
+        reportId: photosForReportId,
+        reporterId: currentReporterId,
+        file,
+        fileName: file.name || "photo",
+        mimeType: file.type,
+        byteSize: file.size,
+        state: "waiting_for_report" as const,
+      })));
+      setSelectedPhotos([]);
+      setPhotosForReportId(null);
+      setPhotosForReporterId(null);
+      await refreshEvidence();
+      if (navigator.onLine) await sync();
+    } catch (e) {
+      setEvidenceError(e instanceof Error ? e.message : "The selected photos could not be saved for retry.");
+    }
   }
 
   function startHold() { if(busy) return; setHolding(true); timer.current = setTimeout(()=>{ setHolding(false); void submit(); }, HOLD_MS); }
@@ -262,6 +370,63 @@ export default function ReportPage() {
             <input type="checkbox" checked={aiProcessingConsent} onChange={(event) => setAiProcessingConsent(event.target.checked)} className="mt-1 size-4 accent-primary" />
             <span>Optional: I consent to AI generating a provisional observation summary from this report and its evidence. AI outputs are uncertain and will not verify the report; an authorised human remains responsible for review.</span>
           </label>
+        </Card>
+      </Reveal>
+
+      {/* ---------- Optional photo evidence ---------- */}
+      <Reveal delay={0.2} className="mt-4">
+        <Card className="p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[11px] bg-trust-soft text-trust"><Camera className="size-4" aria-hidden /></span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[17px] font-semibold leading-tight">Optional photo evidence</h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-slate-ink/75">Photos upload separately after the server confirms this report. Each image must be JPEG, PNG or WebP and no larger than 5 MB. Never put yourself at risk to collect evidence.</p>
+              <input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Take a photo" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
+              <input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Choose photos from gallery" onChange={(event) => { addPhotos(event.target.files); event.currentTarget.value = ""; }} />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" size="md" disabled={!!photosForReportId} onClick={() => cameraInput.current?.click()}><Camera className="size-4" aria-hidden />Take photo</Button>
+                <Button type="button" variant="secondary" size="md" disabled={!!photosForReportId} onClick={() => galleryInput.current?.click()}><ImagePlus className="size-4" aria-hidden />Choose from gallery</Button>
+              </div>
+              {selectedPhotos.length > 0 && (
+                <div className="mt-4 space-y-2" aria-label="Selected photos">
+                  {selectedPhotos.map(({ evidenceId, file }) => (
+                    <div key={evidenceId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-canvas px-3.5 py-3 ring-1 ring-inset ring-[var(--hairline)]">
+                      <span className="min-w-0 truncate text-[13px] font-medium text-navy">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB · selected on this device</span>
+                      <button type="button" className="min-h-10 px-2 text-[13px] font-semibold text-alert underline underline-offset-2" onClick={() => { setSelectedPhotos((items) => items.filter((item) => item.evidenceId !== evidenceId)); if (photosForReportId && selectedPhotos.length === 1) { setPhotosForReportId(null); setPhotosForReporterId(null); } }}>Remove</button>
+                    </div>
+                  ))}
+                  {photosForReportId && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[12px] text-muted-ink">These photos belong to saved report {shortRef(photosForReportId)}.</span>
+                      <Button type="button" variant="subtle" size="sm" onClick={() => void saveSelectedPhotosForRetry()}>Save photos for separate upload</Button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {evidenceRecords.length > 0 && (
+                <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+                  <h3 className="text-[13px] font-semibold text-navy">Photo upload status</h3>
+                  <ul className="mt-2 space-y-2" aria-live="polite">
+                    {evidenceRecords.map((record) => (
+                      <li key={record.evidenceId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-canvas px-3.5 py-3 ring-1 ring-inset ring-[var(--hairline)]">
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium text-navy">{record.fileName}</p>
+                          <p className="text-[12px] text-slate-ink/75">
+                            {record.state === "received" ? `Received by server${record.receivedAt ? ` · ${new Date(record.receivedAt).toLocaleString()}` : ""}` : record.state === "waiting_for_report" ? "Waiting for report receipt" : record.state === "uploading" ? "Uploading photo…" : record.state === "failed" ? `Upload failed: ${record.error || "retry available"}` : "Waiting to upload"}
+                          </p>
+                        </div>
+                        {(record.state === "failed" || record.state === "pending") && record.file && (
+                          <Button type="button" size="sm" variant="subtle" onClick={() => void retryPhoto(record.evidenceId)}>Retry photo</Button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="mt-3 text-[12px] leading-relaxed text-muted-ink">Pending photos stay in this browser and are scoped to the reporter session that saved them. A report or photo saved without a reporter session cannot sync automatically.</p>
+              {evidenceError && <p role="alert" className="mt-3 text-[13px] text-alert">{evidenceError}</p>}
+            </div>
+          </div>
         </Card>
       </Reveal>
 
