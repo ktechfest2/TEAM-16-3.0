@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 
 type Place = { code: string; name: string };
@@ -15,8 +15,39 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
   const [fullCode, setFullCode] = useState("");
   const [loading, setLoading] = useState<Level | "code" | null>(null);
   const [error, setError] = useState("");
+  const requestGeneration = useRef(0);
+
+  function hierarchy(unit: Unit) {
+    const match = /^(\d{2})\/(\d{2})\/(\d{2})\/\d{3}$/.exec(unit.code);
+    if (!match) return null;
+    return { stateCode: match[1], lgaCode: match[2], wardCode: match[3] };
+  }
+
+  function restoreHierarchy(unit: Unit) {
+    const codes = hierarchy(unit);
+    if (!codes) return false;
+    requestGeneration.current += 1;
+    setState(codes.stateCode);
+    setLga(codes.lgaCode);
+    setWard(codes.wardCode);
+    setItems(current => ({
+      states: unit.state ? [{ code: codes.stateCode, name: unit.state }, ...current.states.filter(item => item.code !== codes.stateCode)] : current.states,
+      lgas: unit.lga ? [{ code: codes.lgaCode, name: unit.lga }, ...current.lgas.filter(item => item.code !== codes.lgaCode)] : current.lgas,
+      wards: unit.ward ? [{ code: codes.wardCode, name: unit.ward }, ...current.wards.filter(item => item.code !== codes.wardCode)] : current.wards,
+      units: [unit, ...current.units.filter(item => (item as Unit).id !== unit.id)],
+    }));
+    setFilters({ states: "", lgas: "", wards: "", units: "" });
+    return true;
+  }
 
   useEffect(() => {
+    if (selected) restoreHierarchy(selected);
+    // Restore only when the confirmed unit changes; parent changes are handled synchronously below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  useEffect(() => {
+    const generation = ++requestGeneration.current;
     const level: Level = !state ? "states" : !lga ? "lgas" : !ward ? "wards" : "units";
     const params = new URLSearchParams({ level });
     if (state) params.set("state", state);
@@ -27,23 +58,27 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
     fetch(`/api/directory?${params}`, { signal: controller.signal }).then(async response => {
       if (!response.ok) throw Error("Directory unavailable. Retry when connected.");
       return response.json();
-    }).then(data => setItems(current => ({ ...current, [level]: data.items || [] })))
+    }).then(data => { if (generation === requestGeneration.current) setItems(current => ({ ...current, [level]: data.items || [] })); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Directory unavailable"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(null); });
     return () => controller.abort();
   }, [state, lga, ward]);
 
   async function findCode() {
+    const generation = ++requestGeneration.current;
     if (!/^\d{2}\/\d{2}\/\d{2}\/\d{3}$/.test(fullCode)) { setError("Enter the full code, for example 01/01/01/001."); return; }
     setLoading("code"); setError("");
     try {
       const response = await fetch(`/api/directory?level=code&search=${encodeURIComponent(fullCode)}`);
       if (!response.ok) throw Error("Code lookup unavailable. Try again when connected.");
       const unit = (await response.json()).items?.[0] as Unit | undefined;
+      if (generation !== requestGeneration.current) return;
       if (!unit) { setError("No polling unit matches that full code."); return; }
-      setState(unit.code.slice(0, 2)); setLga(unit.code.slice(3, 5)); setWard(unit.code.slice(6, 8)); onSelect({ ...unit, is_simulated: false });
+      const restored = { ...unit, is_simulated: false };
+      if (!restoreHierarchy(restored)) { setError("The directory returned an invalid polling-unit code."); return; }
+      onSelect(restored);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Code lookup failed"); }
-    finally { setLoading(null); }
+    finally { if (generation === requestGeneration.current) setLoading(null); }
   }
 
   const control = (level: Level, label: string, value: string, disabled: boolean, change: (value: string) => void) => (
@@ -60,11 +95,35 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
     </div>
   );
 
+  function changeState(value: string) {
+    requestGeneration.current += 1;
+    setState(value); setLga(""); setWard("");
+    setItems(current => ({ ...current, lgas: [], wards: [], units: [] }));
+    setFilters(current => ({ ...current, lgas: "", wards: "", units: "" }));
+    setLoading(null); setError(""); onSelect(null);
+  }
+
+  function changeLga(value: string) {
+    requestGeneration.current += 1;
+    setLga(value); setWard("");
+    setItems(current => ({ ...current, wards: [], units: [] }));
+    setFilters(current => ({ ...current, wards: "", units: "" }));
+    setLoading(null); setError(""); onSelect(null);
+  }
+
+  function changeWard(value: string) {
+    requestGeneration.current += 1;
+    setWard(value);
+    setItems(current => ({ ...current, units: [] }));
+    setFilters(current => ({ ...current, units: "" }));
+    setLoading(null); setError(""); onSelect(null);
+  }
+
   return <div className="space-y-3">
     <div className="grid gap-3 sm:grid-cols-2">
-      {control("states", "State or FCT", state, false, value => { setState(value); setLga(""); setWard(""); onSelect(null); })}
-      {control("lgas", "LGA", lga, !state, value => { setLga(value); setWard(""); onSelect(null); })}
-      {control("wards", "Ward", ward, !lga, value => { setWard(value); onSelect(null); })}
+      {control("states", "State or FCT", state, false, changeState)}
+      {control("lgas", "LGA", lga, !state, changeLga)}
+      {control("wards", "Ward", ward, !lga, changeWard)}
       {control("units", "Polling unit", selected?.id || "", !ward, value => { const unit = items.units.find(item => (item as Unit).id === value) as Unit | undefined; onSelect(unit ? { ...unit, is_simulated: false } : null); })}
     </div>
     <div className="flex flex-wrap gap-2"><Input aria-label="Full polling-unit code" value={fullCode} onChange={event => setFullCode(event.target.value)} placeholder="Full code: 01/01/01/001" className="min-w-0 flex-1" /><button type="button" onClick={() => void findCode()} disabled={loading === "code"} className="min-h-11 rounded-xl bg-midnight px-4 text-sm font-semibold text-white">Find code</button></div>
