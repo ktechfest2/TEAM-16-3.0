@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Inbox, Plus, RefreshCw, ShieldCheck } from "lucide-react";
-import { browserSupabase, bearerHeaders } from "@/lib/client/supabase";
-import { listQueued, type QueuedReport } from "@/lib/client/outbox";
+import { browserSupabase } from "@/lib/client/supabase";
+import { listQueuedForReporter, type QueuedReport } from "@/lib/client/outbox";
 import { category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -39,29 +39,34 @@ export default function MyReports() {
     const generation = ++requestGeneration.current;
     setLoading(true);
     setReports([]);
+    setQueued([]);
     setNotice("");
     try {
-      const queuedReports = await listQueued();
-      if (generation !== requestGeneration.current) return;
-      setQueued(queuedReports);
       const supabase = browserSupabase();
       const { data: { session } } = await supabase.auth.getSession();
       if (generation !== requestGeneration.current) return;
+      const reporterId = session?.user.id ?? null;
+      const queuedReports = await listQueuedForReporter(reporterId);
+      if (generation !== requestGeneration.current) return;
+      setQueued(queuedReports);
       if (!session) {
         setNotice(NO_SESSION_NOTICE);
         return;
       }
-      const reporterId = session.user.id;
-      const headers = await bearerHeaders();
-      const r = await fetch("/api/reports/mine", { headers, cache: "no-store" });
+      const r = await fetch("/api/reports/mine", {
+        headers: { authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      });
       if (!r.ok) throw new Error("Unable to load server reports");
       const payload = await r.json() as { reports?: ServerReport[] };
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (generation !== requestGeneration.current) return;
-      if (currentSession?.user.id !== reporterId) {
+      if ((currentSession?.user.id ?? null) !== reporterId) {
         requestGeneration.current += 1;
         setReports([]);
+        setQueued([]);
         setNotice(currentSession ? "" : NO_SESSION_NOTICE);
+        setLoading(false);
         if (currentSession) window.setTimeout(() => void loadRef.current(), 0);
         return;
       }
@@ -94,6 +99,7 @@ export default function MyReports() {
         observedReporterId = nextReporterId;
         requestGeneration.current += 1;
         setReports([]);
+        setQueued([]);
         setLoading(false);
         if (nextReporterId) {
           setNotice("");

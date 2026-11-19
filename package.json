@@ -8,6 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:contracts": "node --experimental-strip-types --test tests/*.test.mts",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e": "playwright test",
     "test": "npm run test:contracts"
   },
   "dependencies": {
@@ -31,6 +33,7 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight, CheckCircle2, CloudUpload, Loader2, MapPin, RefreshCw, Siren, Wifi, WifiOff,
 } from "lucide-react";
 import { categories, parseReport, type ReportPayload } from "@/lib/report-contract";
-import { flushQueued, listQueued, queueReport } from "@/lib/client/outbox";
+import { flushQueued, listQueuedForReporter, queueReport } from "@/lib/client/outbox";
+import { bearerHeaders, browserSupabase } from "@/lib/client/supabase";
 import { categoryMeta, category as categoryOf } from "@/lib/taxonomy";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,6 +36,19 @@ export default function ReportPage() {
   const [online, setOnline] = useState(true);
   const [lastSavedRef, setLastSavedRef] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingGeneration = useRef(0);
+  const syncGeneration = useRef(0);
+
+  const refreshPending = useCallback(async () => {
+    const generation = ++pendingGeneration.current;
+    try {
+      const { data: { session } } = await browserSupabase().auth.getSession();
+      const records = await listQueuedForReporter(session?.user.id ?? null);
+      if (generation === pendingGeneration.current) setPending(records.length);
+    } catch {
+      if (generation === pendingGeneration.current) setPending(0);
+    }
+  }, []);
 
   useEffect(() => {
     const cached = localStorage.getItem("signa-units");
@@ -42,22 +56,43 @@ export default function ReportPage() {
     void fetch("/api/polling-units").then(r=>r.json()).then(data=>{
       if (Array.isArray(data.units)) { setUnits(data.units); localStorage.setItem("signa-units", JSON.stringify(data.units)); }
     }).catch(()=>{});
-    void listQueued().then(list=>setPending(list.length)).catch(()=>{});
+    let unsubscribe: (() => void) | undefined;
+    try {
+      const { data: { subscription } } = browserSupabase().auth.onAuthStateChange(() => {
+        pendingGeneration.current += 1;
+        syncGeneration.current += 1;
+        setPending(0);
+        window.setTimeout(() => void refreshPending(), 0);
+      });
+      unsubscribe = () => subscription.unsubscribe();
+    } catch {
+      // Pending local records still remain durable if auth is not configured.
+    }
+    void refreshPending();
     setOnline(navigator.onLine);
     const onOnline = () => { setOnline(true); void sync(); };
     const onOffline = () => setOnline(false);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     return () => {
+      unsubscribe?.();
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, []); // sync is stable enough for event use; it operates on durable IndexedDB data.
+  }, [refreshPending]);
 
   async function sync() {
+    const generation = ++syncGeneration.current;
     try {
+      const supabase = browserSupabase();
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
       const result = await flushQueued();
-      setPending(result.pending);
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (generation !== syncGeneration.current || (currentSession?.user.id ?? null) !== (initialSession?.user.id ?? null)) {
+        await refreshPending();
+        return;
+      }
+      await refreshPending();
       if (result.delivered.length) setNotice(`${result.delivered.length} report(s) received by the server.`);
       if (result.errors.length) setError(result.errors.join("; "));
     } catch { setError("Could not check pending reports. They remain saved locally."); }
@@ -71,11 +106,23 @@ export default function ReportPage() {
         id: crypto.randomUUID(), pollingUnitId: unitId, category,
         description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
       });
-      await queueReport(payload);
-      setPending((p)=>p+1);
+      let reporterId: string | null = null;
+      try {
+        const supabase = browserSupabase();
+        let { data: { session } } = await supabase.auth.getSession();
+        if (!session && navigator.onLine) {
+          await bearerHeaders();
+          ({ data: { session } } = await supabase.auth.getSession());
+        }
+        reporterId = session?.user.id ?? null;
+      } catch {
+        // Offline reports without a session remain unassigned and are never shown to another reporter.
+      }
+      await queueReport(payload, reporterId);
       setDescription("");
       setLastSavedRef(shortRef(payload.id));
       setNotice(`Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`);
+      await refreshPending();
       if (navigator.onLine) await sync();
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
     finally { setBusy(false); }

@@ -1,7 +1,13 @@
 "use client";
 import type { ReportPayload } from "../report-contract";
-import { bearerHeaders } from "./supabase";
-export type QueuedReport = { payload: ReportPayload; queuedAt: string; state: "pending" | "failed"; error?: string };
+import { browserSupabase } from "./supabase";
+export type QueuedReport = {
+  payload: ReportPayload;
+  queuedAt: string;
+  state: "pending" | "failed";
+  reporterId?: string | null;
+  error?: string;
+};
 const DB = "signa-offline-v1";
 const STORE = "reports";
 export function openOutbox(): Promise<IDBDatabase> {
@@ -29,17 +35,40 @@ async function trans<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore
   });
 }
 
-export async function queueReport(payload: ReportPayload) {
-  await trans("readwrite", store => store.put({ payload, queuedAt: new Date().toISOString(), state: "pending" }));
+export async function queueReport(payload: ReportPayload, reporterId: string | null) {
+  await trans("readwrite", store => store.put({ payload, reporterId, queuedAt: new Date().toISOString(), state: "pending" }));
 }
 export async function listQueued(): Promise<QueuedReport[]> { return await trans("readonly", store => store.getAll()) as QueuedReport[]; }
+export async function listQueuedForReporter(reporterId: string | null): Promise<QueuedReport[]> {
+  const records = await listQueued();
+  return reporterId
+    ? records.filter(record => record.reporterId === reporterId)
+    : records.filter(record => !record.reporterId);
+}
 export async function removeQueued(id: string) { await trans("readwrite", store => store.delete(id)); }
 export async function flushQueued(): Promise<{ delivered: string[]; pending: number; errors: string[] }> {
   const delivered: string[] = [], errors: string[] = [];
-  const records = await listQueued();
-  if (!navigator.onLine) return { delivered, pending: records.length, errors };
-  let auth: Record<string, string>;
-  try { auth = await bearerHeaders(); } catch(e) { return { delivered, pending: records.length, errors: [e instanceof Error ? e.message : "Authentication unavailable"] }; }
+  let reporterId: string | null = null;
+  let accessToken: string | null = null;
+  try {
+    const { data: { session } } = await browserSupabase().auth.getSession();
+    reporterId = session?.user.id ?? null;
+    accessToken = session?.access_token ?? null;
+  } catch {
+    const records = await listQueuedForReporter(null);
+    return { delivered, pending: records.length, errors: ["Reporter session unavailable"] };
+  }
+  if (!navigator.onLine) {
+    const records = await listQueuedForReporter(reporterId);
+    return { delivered, pending: records.length, errors };
+  }
+  const records = await listQueuedForReporter(reporterId);
+  if (!accessToken) {
+    if (records.length) errors.push("Saved offline reports have no reporter session. They remain on this device.");
+    return { delivered, pending: records.length, errors };
+  }
+
+  const auth = { authorization: `Bearer ${accessToken}` };
   for (const record of records) {
     try {
       const response = await fetch("/api/reports", {
@@ -55,5 +84,5 @@ export async function flushQueued(): Promise<{ delivered: string[]; pending: num
       }
     } catch { errors.push(`${record.payload.id.slice(0, 8)}: network unavailable`); }
   }
-  return { delivered, pending: (await listQueued()).length, errors };
+  return { delivered, pending: (await listQueuedForReporter(reporterId)).length, errors };
 }
