@@ -81,7 +81,72 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
   await expect.poll(() => evidenceKeys.length).toBe(2);
   expect(evidenceKeys.every((value) => /^[0-9a-f-]{36}$/i.test(value))).toBe(true);
   await expect(page.getByText(/Photo upload status/)).toBeVisible();
-  await expect(page.getByText(/Received by server/)).toHaveCount(2);
+  await expect(page.getByText(/Received by server/)).toHaveCount(3);
   await expect(page.getByRole("status").filter({ hasText: /received by the server/i })).toBeVisible();
+  await expect(page.getByText("Received by server", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
+});
+
+test("offline report stays saved and only its own receipt confirms on reconnection", async ({ page, context }) => {
+  await installSession(page);
+  await fakePollingUnit(context);
+  const otherId = "00000000-0000-4000-8000-000000000899";
+  let currentId = "";
+  let allowCurrent = false;
+  await context.route("**/api/reports", async route => {
+    const id = (route.request().postDataJSON() as { id: string }).id;
+    if (id !== otherId) currentId = id;
+    if (id === otherId || allowCurrent) return route.fulfill({ status: 201, json: { id, delivery: "received", receivedAt: new Date().toISOString() } });
+    return route.fulfill({ status: 503, json: { error: { message: "Retry later" } } });
+  });
+  await page.goto("/report");
+  await page.evaluate(async ({ id, unitId, reporterId }) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => { const req = indexedDB.open("signa-offline-v1", 2); req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains("reports")) req.result.createObjectStore("reports", { keyPath: "payload.id" }); if (!req.result.objectStoreNames.contains("evidence")) req.result.createObjectStore("evidence", { keyPath: "evidenceId" }); }; req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+    await new Promise<void>((resolve, reject) => { const tx = db.transaction("reports", "readwrite"); tx.objectStore("reports").put({ reporterId, queuedAt: new Date().toISOString(), state: "pending", payload: { id, pollingUnitId: unitId, category: "disruption", description: "Other fictional queue item", occurredAt: null, clientCreatedAt: new Date().toISOString() } }); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
+    db.close();
+  }, { id: otherId, unitId: UNIT_ID, reporterId: REPORTER_ID });
+  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await page.getByRole("button", { name: /Disruption/i }).first().click();
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "Submit alert" }).click();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Saved on this device")).toBeVisible();
+  await context.setOffline(false);
+  await expect.poll(() => currentId).not.toBe("");
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Saved on this device")).toBeVisible();
+  allowCurrent = true;
+  await page.getByRole("button", { name: "Sync now" }).click();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
+});
+
+test("reporter session change hides the previous receipt", async ({ page, context }) => {
+  await installSession(page);
+  await fakePollingUnit(context);
+  await context.route("**/api/reports", route => { const id = (route.request().postDataJSON() as { id: string }).id; return route.fulfill({ status: 201, json: { id, delivery: "received", receivedAt: new Date().toISOString() } }); });
+  await page.goto("/report");
+  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await page.getByRole("button", { name: /Disruption/i }).first().click();
+  await page.getByRole("button", { name: "Submit alert" }).click();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
+  await page.evaluate((key) => { localStorage.removeItem(key); const channel = new BroadcastChannel(key); channel.postMessage({ event: "SIGNED_OUT", session: null }); channel.close(); }, storageKey);
+  await expect(page.getByText("Alert recorded")).toHaveCount(0);
+});
+
+test("failed photo upload leaves the confirmed report receipt intact", async ({ page, context }) => {
+  await installSession(page);
+  await fakePollingUnit(context);
+  await context.route("**/api/reports", route => {
+    const id = (route.request().postDataJSON() as { id: string }).id;
+    return route.fulfill({ status: 201, json: { id, delivery: "received", receivedAt: new Date().toISOString() } });
+  });
+  await context.route("**/api/reports/*/evidence", route => route.fulfill({ status: 503, json: { error: { message: "Upload unavailable" } } }));
+  await page.goto("/report");
+  await page.getByLabel("Polling unit").selectOption(UNIT_ID);
+  await page.getByRole("button", { name: /Disruption/i }).first().click();
+  await page.getByText(/Add details or photo \(optional\)/).click();
+  await page.getByLabel("Choose photos from gallery").setInputFiles({ name: "fictional.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]) });
+  await page.getByRole("button", { name: "Submit alert" }).click();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
+  await expect(page.getByText(/Upload failed/i).first()).toBeVisible();
+  await expect(page.getByText("Alert recorded").locator("..").getByText("Received by server")).toBeVisible();
 });
 

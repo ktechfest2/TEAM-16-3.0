@@ -17,6 +17,7 @@ import { PageShell } from "@/components/signa/shell";
 import { PageHeader } from "@/components/signa/page-header";
 import { SafetyNotice } from "@/components/signa/safety-notice";
 import { DeliveryChip } from "@/components/signa/status-chip";
+import type { DeliveryState } from "@/lib/taxonomy";
 import { AnimatePresence, Reveal, motion } from "@/components/signa/motion";
 import { cn, shortRef } from "@/lib/utils";
 import { MAX_EVIDENCE_BYTES } from "@/lib/evidence-contract";
@@ -38,6 +39,8 @@ export default function ReportPage() {
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(true);
   const [lastSavedRef, setLastSavedRef] = useState("");
+  const latestReportRef = useRef<{ id: string; reporterId: string | null; delivery: DeliveryState }>({ id: "", reporterId: null, delivery: "saved" });
+  const [latestReport, setLatestReport] = useState<{ id: string; reporterId: string | null; delivery: DeliveryState }>({ id: "", reporterId: null, delivery: "saved" });
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
   const [photosForReportId, setPhotosForReportId] = useState<string | null>(null);
   const [photosForReporterId, setPhotosForReporterId] = useState<string | null>(null);
@@ -80,9 +83,14 @@ export default function ReportPage() {
     }).catch(()=>{});
     let unsubscribe: (() => void) | undefined;
     try {
-      const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange(() => {
+      const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange((_event, session) => {
         pendingGeneration.current += 1;
         syncGeneration.current += 1;
+        if (latestReportRef.current.id && latestReportRef.current.reporterId !== (session?.user.id ?? null)) {
+          latestReportRef.current = { id: "", reporterId: null, delivery: "saved" };
+          setLatestReport(latestReportRef.current);
+          setNotice("");
+        }
         setPending(0);
         window.setTimeout(() => void refreshPending(), 0);
       });
@@ -104,7 +112,7 @@ export default function ReportPage() {
     };
   }, [refreshEvidence, refreshPending]);
 
-  async function sync() {
+  async function sync(submitted?: { id: string; reporterId: string | null }) {
     const generation = ++syncGeneration.current;
     try {
       const { data: { session: initialSession } } = await getCitizenSession();
@@ -114,6 +122,12 @@ export default function ReportPage() {
         await refreshPending();
         return;
       }
+      const active = submitted ?? latestReportRef.current;
+      if (active.id && active.reporterId && active.reporterId === currentSession?.user.id && result.delivered.includes(active.id) && latestReportRef.current.id === active.id && latestReportRef.current.reporterId === active.reporterId) {
+        latestReportRef.current = { ...active, delivery: "received" };
+        setLatestReport(latestReportRef.current);
+        setNotice(`Report ${active.id.slice(0, 8)} received by the server.`);
+      }
       await refreshPending();
       if (currentSession?.user.id && currentSession.access_token) {
         const evidenceResult = await flushQueuedEvidence(currentSession.user.id, currentSession.access_token);
@@ -121,7 +135,6 @@ export default function ReportPage() {
         else if (evidenceResult.received.length) setEvidenceError("");
       }
       await refreshEvidence();
-      if (result.delivered.length) setNotice(`${result.delivered.length} report(s) received by the server.`);
       if (result.errors.length) setError(result.errors.join("; "));
     } catch { setError("Could not check pending reports. They remain saved locally."); }
   }
@@ -136,6 +149,8 @@ export default function ReportPage() {
         description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
         aiProcessingConsent: fictionalTest, fictionalTestSubmission: fictionalTest,
       });
+      latestReportRef.current = { id: payload.id, reporterId: null, delivery: "sending" };
+      setLatestReport(latestReportRef.current);
       let reporterId: string | null = null;
       try {
         let { data: { session } } = await getCitizenSession();
@@ -148,6 +163,8 @@ export default function ReportPage() {
         // Offline reports without a session remain unassigned and are never shown to another reporter.
       }
       await queueReport(payload, reporterId);
+      latestReportRef.current = { id: payload.id, reporterId, delivery: "saved" };
+      setLatestReport(latestReportRef.current);
       if (selectedPhotos.length && !photosForReportId) {
         setPhotosForReportId(payload.id);
         setPhotosForReporterId(reporterId);
@@ -178,7 +195,7 @@ export default function ReportPage() {
         : `Saved on this device (${payload.id.slice(0, 8)}), but no reporter session was available. This draft cannot be linked or synced automatically; keep this browser private and do not clear its data. NOT delivered.`);
       await refreshPending();
       await refreshEvidence();
-      if (navigator.onLine) await sync();
+      if (navigator.onLine) await sync({ id: payload.id, reporterId });
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
     finally { submitting.current = false; setBusy(false); }
   }
@@ -501,7 +518,7 @@ export default function ReportPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[15px] font-semibold text-navy">Alert recorded</p>
-                      <DeliveryChip state={busy ? "sending" : "saved"} size="sm" />
+                      <DeliveryChip state={latestReport.delivery} size="sm" />
                     </div>
                     <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-ink/85" role="status">
                       {notice}
