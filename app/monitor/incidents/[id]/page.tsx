@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
-  ArrowLeft, CheckCircle2, FileText, History, MapPin, RefreshCw, Scale, UserPlus,
+  ArrowLeft, CheckCircle2, Eye, FileText, History, MapPin, RefreshCw, Scale, UserPlus,
 } from "lucide-react";
 import { ApiError, staffFetch } from "@/lib/client/api";
 import { reviewOutcomes, type ReviewOutcome } from "@/lib/case-contract";
@@ -24,6 +24,7 @@ import { CategoryGlyph, ResponseChip, ReviewChip } from "@/components/signa/stat
 import { Timeline, type TimelineEntry } from "@/components/signa/timeline";
 import { Reveal, Stagger, StaggerItem } from "@/components/signa/motion";
 import { cn, formatDateTime, formatRelative, shortRef } from "@/lib/utils";
+import { AiAssessmentPanel } from "@/components/signa/ai-assessment-panel";
 
 type CaseFile = {
   incident: {
@@ -39,7 +40,7 @@ type CaseFile = {
     } | null;
   };
   reports: { id: string; category: string; description: string; received_at: string; occurred_at: string | null }[];
-  reviews: { id: string; outcome: ReviewOutcome; reason: string; created_at: string }[];
+  reviews: { id: string; outcome: ReviewOutcome; reason: string; created_at: string; evidence_ids?: string[] }[];
   assignment: {
     id: string; assigned_to: string; assigned_at: string;
     acknowledged_at: string | null; acknowledgement_note: string | null;
@@ -48,6 +49,8 @@ type CaseFile = {
 };
 
 type Coordinator = { id: string; display_name: string | null };
+type EvidenceItem = { id: string; reportId: string; mimeType: string; byteSize: number; sha256: string; receivedAt: string };
+type EvidenceView = { items: EvidenceItem[]; error?: string };
 
 export default function IncidentDetailPage() {
   const params = useParams<{ id: string }>();
@@ -58,6 +61,10 @@ export default function IncidentDetailPage() {
   const [access, setAccess] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [evidenceByReport, setEvidenceByReport] = useState<Record<string, EvidenceView>>({});
+  const [preview, setPreview] = useState<{ evidenceId: string; signedUrl: string } | null>(null);
+  const [previewError, setPreviewError] = useState("");
+  const [selectedReviewEvidence, setSelectedReviewEvidence] = useState<string[]>([]);
 
   const [outcome, setOutcome] = useState<ReviewOutcome>("inconclusive");
   const [reason, setReason] = useState("");
@@ -75,6 +82,15 @@ export default function IncidentDetailPage() {
       const file = await staffFetch<CaseFile>(`/api/monitor/incidents/${id}`);
       setData(file);
       setAccess(true);
+      const evidenceEntries = await Promise.all(file.reports.map(async (report) => {
+        try {
+          const response = await staffFetch<{ evidence: EvidenceItem[] }>(`/api/reports/${report.id}/evidence`);
+          return [report.id, { items: response.evidence || [] }] as const;
+        } catch (e) {
+          return [report.id, { items: [], error: e instanceof Error ? e.message : "Evidence could not be loaded." }] as const;
+        }
+      }));
+      setEvidenceByReport(Object.fromEntries(evidenceEntries));
       try {
         const list = await staffFetch<{ coordinators: Coordinator[] }>("/api/monitor/coordinators");
         setCoordinators(list.coordinators || []);
@@ -100,9 +116,10 @@ export default function IncidentDetailPage() {
     try {
       await staffFetch(`/api/monitor/incidents/${id}/reviews`, {
         method: "POST",
-        body: JSON.stringify({ outcome, reason }),
+        body: JSON.stringify({ outcome, reason, evidenceIds: selectedReviewEvidence }),
       });
       setReason("");
+      setSelectedReviewEvidence([]);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not record the review");
@@ -173,6 +190,18 @@ export default function IncidentDetailPage() {
   const { incident, reports, reviews, assignment, events } = data;
   const unit = incident.polling_units;
   const canAssign = incident.review_state === "supported" && !assignment;
+  const availableEvidence = reports.flatMap((report) => (evidenceByReport[report.id]?.items || []).map((item) => ({ ...item, reportId: report.id })));
+
+  async function openEvidence(reportId: string, evidenceId: string) {
+    setPreview(null);
+    setPreviewError("");
+    try {
+      const result = await staffFetch<{ signedUrl: string; expiresAt: string }>(`/api/reports/${reportId}/evidence/${evidenceId}`);
+      setPreview({ evidenceId, signedUrl: result.signedUrl });
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : "Evidence preview is unavailable.");
+    }
+  }
 
   const timeline: TimelineEntry[] = events.map((event) => {
     const meta = caseEventMeta[event.event_type] ?? { label: event.event_type, tone: "neutral" as const };
@@ -266,6 +295,29 @@ export default function IncidentDetailPage() {
                         Received {formatDateTime(report.received_at)}
                         {report.occurred_at ? ` · observed ${formatDateTime(report.occurred_at)}` : ""}
                       </p>
+                      <div className="mt-4 border-t border-[var(--hairline)] pt-3">
+                        <p className="text-[12px] font-semibold text-navy">Private evidence</p>
+                        {evidenceByReport[report.id]?.error ? (
+                          <p className="mt-1 text-[12px] text-alert">Evidence unavailable: {evidenceByReport[report.id].error}</p>
+                        ) : evidenceByReport[report.id]?.items.length ? (
+                          <ul className="mt-2 space-y-2">
+                            {evidenceByReport[report.id].items.map((item) => (
+                              <li key={item.id} className="rounded-xl bg-white p-3 ring-1 ring-inset ring-[var(--hairline)]">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-[12px] text-slate-ink/80">{item.mimeType} · {(item.byteSize / 1024).toFixed(0)} KB · {formatDateTime(item.receivedAt)}</span>
+                                  <Button type="button" size="sm" variant="subtle" onClick={() => void openEvidence(report.id, item.id)}><Eye className="size-3.5" aria-hidden />View privately</Button>
+                                </div>
+                                {preview?.evidenceId === item.id && <img src={preview.signedUrl} alt={`Private evidence for report ${shortRef(report.id)}`} className="mt-3 max-h-96 w-full rounded-lg bg-canvas object-contain" onError={() => { setPreview(null); setPreviewError("This private preview link expired or the image is unavailable. Refresh and try again."); }} />}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : evidenceByReport[report.id] ? (
+                          <p className="mt-1 text-[12px] text-slate-ink/70">No received photos are attached to this report.</p>
+                        ) : (
+                          <p className="mt-1 text-[12px] text-slate-ink/70" role="status">Loading private evidence…</p>
+                        )}
+                        {previewError && <p role="alert" className="mt-2 text-[12px] text-alert">{previewError}</p>}
+                      </div>
                     </div>
                   </div>
                 </StaggerItem>
@@ -322,6 +374,20 @@ export default function IncidentDetailPage() {
                 />
               </Field>
             </div>
+            {availableEvidence.length > 0 && (
+              <fieldset className="mt-4">
+                <legend className="text-[13px] font-semibold text-navy">Evidence references (optional)</legend>
+                <p className="mt-1 text-[12px] text-slate-ink/70">Select only the photos your written rationale addresses. References do not establish authenticity.</p>
+                <div className="mt-2 space-y-2">
+                  {availableEvidence.map((item) => (
+                    <label key={item.id} className="flex min-h-11 items-center gap-3 rounded-xl bg-canvas px-3 py-2 text-[12.5px] text-slate-ink ring-1 ring-inset ring-[var(--hairline)]">
+                      <input type="checkbox" checked={selectedReviewEvidence.includes(item.id)} onChange={(event) => setSelectedReviewEvidence((current) => event.target.checked ? [...current, item.id] : current.filter((value) => value !== item.id))} className="size-4 accent-primary" />
+                      <span>{shortRef(item.id)} · report {shortRef(item.reportId)} · {item.mimeType}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <Button
               variant="primary"
               size="lg"
@@ -334,6 +400,8 @@ export default function IncidentDetailPage() {
               Record review outcome
             </Button>
           </Card>
+
+          <AiAssessmentPanel reports={reports} reviewState={incident.review_state} responseState={incident.response_state} />
 
           {/* Assign */}
           <Card className="p-5 sm:p-6">
@@ -445,6 +513,14 @@ export default function IncidentDetailPage() {
                     <p className="mt-2.5 text-[13.5px] leading-relaxed text-slate-ink/85">
                       {review.reason}
                     </p>
+                    {review.evidence_ids?.length ? (
+                      <p className="mt-2 text-[12px] leading-relaxed text-slate-ink/75">
+                        Evidence references: {review.evidence_ids.map((evidenceId) => {
+                          const item = availableEvidence.find((evidence) => evidence.id === evidenceId);
+                          return item ? `${shortRef(evidenceId)} (report ${shortRef(item.reportId)})` : `${shortRef(evidenceId)} (currently unavailable)`;
+                        }).join(" · ")}
+                      </p>
+                    ) : null}
                   </div>
                 ))}
               </div>
