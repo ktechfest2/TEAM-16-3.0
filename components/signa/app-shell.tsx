@@ -51,7 +51,7 @@ export function SiteHeader() {
           })}
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild variant="alert" size="sm">
+          <Button asChild variant="signal" size="sm">
             <Link href="/report">
               <Siren className="size-4" aria-hidden />
               <span className="hidden sm:inline">Report an incident</span>
@@ -95,7 +95,7 @@ export function MobileNav() {
                   className={cn(
                     "grid size-8 place-items-center rounded-[10px] transition-colors",
                     "emphasis" in item && item.emphasis
-                      ? "bg-alert text-white shadow-[0_6px_18px_rgba(220,38,38,0.3)]"
+                      ? "bg-signal text-white shadow-xs"
                       : active
                         ? "bg-[rgba(15,23,42,0.07)]"
                         : "",

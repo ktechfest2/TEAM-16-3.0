@@ -4,14 +4,14 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const controlBase =
-  "w-full rounded-[12px] bg-white text-[15px] text-navy placeholder:text-muted-ink/90 ring-1 ring-inset ring-[var(--hairline-strong)] shadow-xs transition-all duration-200 outline-none focus:ring-2 focus:ring-signal focus:shadow-[0_0_0_4px_rgba(37,99,235,0.10)] disabled:opacity-60 disabled:cursor-not-allowed";
+  "w-full rounded-[10px] bg-white text-[16px] text-ink placeholder:text-muted ring-1 ring-inset ring-[var(--hairline-strong)] shadow-xs transition-colors duration-150 outline-none focus:ring-2 focus:ring-signal focus:shadow-[0_0_0_3px_rgba(36,89,214,0.12)] disabled:opacity-60 disabled:cursor-not-allowed";
 
 export function Label({
   className, hint, ...props
 }: React.LabelHTMLAttributes<HTMLLabelElement> & { hint?: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <label className={cn("text-[13px] font-semibold text-navy", className)} {...props} />
+      <label className={cn("text-[14px] font-semibold text-ink", className)} {...props} />
       {hint ? <span className="text-[12px] font-medium text-muted-ink">{hint}</span> : null}
     </div>
   );
@@ -71,7 +71,7 @@ export function Field({
     <div className={cn("flex flex-col gap-2", className)}>
       <Label htmlFor={htmlFor} hint={hint}>{label}</Label>
       {children}
-      {help ? <p className="text-[12.5px] leading-relaxed text-slate-ink/70">{help}</p> : null}
+      {help ? <p className="text-[13px] leading-relaxed text-muted">{help}</p> : null}
     </div>
   );
 }

@@ -40,6 +40,10 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
     postedReport = route.request().postDataJSON() as Record<string, unknown>;
     await route.fulfill({ status: 201, json: { id: postedReport.id, delivery: "received", receivedAt: "2026-11-19T10:00:00.000Z", duplicate: false } });
   });
+  await context.route("**/api/reports/mine", route => route.fulfill({
+    status: 200,
+    json: { reports: postedReport ? [{ id: postedReport.id }] : [] },
+  }));
   await context.route("**/api/reports/*/evidence", async route => {
     expect(route.request().method()).toBe("POST");
     const evidenceId = route.request().headers()["idempotency-key"];

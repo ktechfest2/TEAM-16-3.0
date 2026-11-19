@@ -1,26 +1,14 @@
 import * as React from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-/** Signa mark: a concentric signal emitted from a single point of witness. */
-export function LogoMark({ className }: { className?: string }) {
+/** Open evidence frame: one observation point moving through two review ticks. */
+export function LogoMark({ className, inverse = false }: { className?: string; inverse?: boolean }) {
   return (
-    <svg viewBox="0 0 32 32" className={cn("size-8", className)} aria-hidden focusable="false">
-      <rect width="32" height="32" rx="9" className="fill-midnight" />
-      <circle cx="16" cy="16" r="3" className="fill-white" />
-      <path
-        d="M22.2 9.8a8.8 8.8 0 0 1 0 12.4M9.8 22.2a8.8 8.8 0 0 1 0-12.4"
-        className="stroke-signal"
-        strokeWidth="2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <path
-        d="M25.6 6.4a13.6 13.6 0 0 1 0 19.2"
-        className="stroke-signal/45"
-        strokeWidth="2"
-        strokeLinecap="round"
-        fill="none"
-      />
+    <svg viewBox="0 0 64 64" className={cn("size-8", inverse ? "text-white" : "text-ink", className)} aria-hidden focusable="false">
+      <path d="M24 11H15a4 4 0 0 0-4 4v9M40 11h9a4 4 0 0 1 4 4v9M53 40v9a4 4 0 0 1-4 4h-9M24 53h-9a4 4 0 0 1-4-4v-9" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <circle cx="20" cy="32" r="5" className="fill-signal" />
+      <path d="M25 32h7m0-6v12m0-6h9m0-6v12m0-6h6" stroke="#11766E" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </svg>
   );
 }
@@ -29,16 +17,16 @@ export function Logo({
   className, wordmarkClassName, href = "/",
 }: { className?: string; wordmarkClassName?: string; href?: string }) {
   return (
-    <a href={href} className={cn("group inline-flex items-center gap-2.5", className)}>
-      <LogoMark className="size-8 transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[1.06]" />
+    <Link href={href} className={cn("group inline-flex items-center gap-2.5", className)}>
+      <LogoMark className="size-8 transition-transform duration-200 ease-out group-hover:scale-[1.035]" />
       <span
         className={cn(
-          "font-display text-[19px] font-bold tracking-[-0.03em] text-midnight",
+          "font-display text-[19px] font-bold tracking-[-0.04em] text-ink",
           wordmarkClassName,
         )}
       >
         Signa
       </span>
-    </a>
+    </Link>
   );
 }

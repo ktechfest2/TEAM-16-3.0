@@ -9,10 +9,11 @@ export const metadata: Metadata = {
   },
   description:
     "Nonpartisan election incident reporting built around Alert, Verify, Respond. Independent monitoring prototype.",
+  icons: { icon: "/brand/signa-mark.svg" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0B1220",
+  themeColor: "#14212B",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
