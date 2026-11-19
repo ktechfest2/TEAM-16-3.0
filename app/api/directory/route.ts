@@ -4,6 +4,25 @@ import { errorResponse, noStore } from "@/lib/server/responses";
 
 const code = /^\d{2}$/;
 const fullCode = /^\d{2}\/\d{2}\/\d{2}\/\d{3}$/;
+const PAGE_SIZE = 500;
+
+type PageResult<T> = {
+  data: T[] | null;
+  error: { message: string } | null;
+};
+
+async function collectAll<T>(
+  load: (from: number, to: number) => PromiseLike<PageResult<T>>,
+): Promise<T[]> {
+  const items: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await load(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data ?? [];
+    items.push(...page);
+    if (page.length < PAGE_SIZE) return items;
+  }
+}
 
 export async function GET(req: Request) {
   try {
@@ -19,27 +38,26 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: { code: "INPUT", message: "Select a valid directory level and its parents" } }, { status: 400, headers: noStore });
     const db = adminClient();
     if (level === "states") {
-      const { data, error } = await db.from("directory_states").select("code,name").order("code").limit(40);
-      if (error) throw error;
-      return NextResponse.json({ items: data }, { headers: noStore });
+      const items = await collectAll((from, to) => db.from("directory_states").select("code,name").order("code").range(from, to));
+      return NextResponse.json({ items }, { headers: noStore });
     }
     if (level === "lgas") {
-      const { data, error } = await db.from("directory_lgas").select("code,name").eq("state_code", state).order("code").limit(100);
-      if (error) throw error;
-      return NextResponse.json({ items: data }, { headers: noStore });
+      const items = await collectAll((from, to) => db.from("directory_lgas").select("code,name").eq("state_code", state).order("code").range(from, to));
+      return NextResponse.json({ items }, { headers: noStore });
     }
     if (level === "wards") {
-      const { data, error } = await db.from("directory_wards").select("code,name").eq("state_code", state).eq("lga_code", lga).order("code").limit(100);
-      if (error) throw error;
-      return NextResponse.json({ items: data }, { headers: noStore });
+      const items = await collectAll((from, to) => db.from("directory_wards").select("code,name").eq("state_code", state).eq("lga_code", lga).order("code").range(from, to));
+      return NextResponse.json({ items }, { headers: noStore });
     }
-    let query = db.from("polling_units").select("id,code,name,state,state_code,lga,lga_code,ward,ward_code,location").eq("is_simulated", false);
-    if (state) query = query.eq("state_code", state);
-    if (lga) query = query.eq("lga_code", lga);
-    if (ward) query = query.eq("ward_code", ward);
-    if (level === "code") query = query.eq("code", search);
-    const { data, error } = await query.order("code").limit(level === "units" ? 500 : 1);
-    if (error) throw error;
-    return NextResponse.json({ items: data || [] }, { headers: noStore });
+    const buildUnitsQuery = () => {
+      let query = db.from("polling_units").select("id,code,name,state,state_code,lga,lga_code,ward,ward_code,location").eq("is_simulated", false);
+      if (state) query = query.eq("state_code", state);
+      if (lga) query = query.eq("lga_code", lga);
+      if (ward) query = query.eq("ward_code", ward);
+      if (level === "code") query = query.eq("code", search);
+      return query;
+    };
+    const items = await collectAll((from, to) => buildUnitsQuery().order("code").range(from, to));
+    return NextResponse.json({ items }, { headers: noStore });
   } catch (error) { return errorResponse(error); }
 }
