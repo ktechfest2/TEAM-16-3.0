@@ -7,7 +7,8 @@ import { canonicalPayload, isRetrySameReport, legacyCanonicalPayload, parseRepor
 import { errorResponse, noStore } from "@/lib/server/responses";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 import { runConsentAssessment } from "@/lib/server/async-ai-assessment";
-import { approvedFictionalReporter } from "@/lib/server/fictional-ai";
+import { approvedFictionalAiReporter, approvedFictionalReportingReporter } from "@/lib/server/fictional-ai";
+import { reportLocationAllowed } from "@/lib/fictional-policy";
 
 export const maxDuration = 30;
 
@@ -33,11 +34,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ id: prior.id, receivedAt: prior.received_at, delivery: "received", duplicate: true }, { headers: noStore });
     }
 
-    if (!unit || unit.is_simulated && !approvedFictionalReporter(viewer.userId)) return NextResponse.json({ error: { code: "UNIT", message: "Polling unit unavailable for this reporter session" } }, { status: 400, headers: noStore });
+    const markedFictional = parsed.fictionalTestSubmission === true;
+    const reportingApproved = approvedFictionalReportingReporter(viewer.userId);
+    if (!unit || !reportLocationAllowed({ isSimulated: unit.is_simulated, markedFictional, fictionalReportingApproved: reportingApproved }))
+      return NextResponse.json({ error: { code: "UNIT", message: "Polling unit unavailable for this reporter session" } }, { status: 400, headers: noStore });
 
     await enforceAbuseLimit(req, viewer.userId, { scope: "report", reporterMax: 30, ipMax: 120, windowSeconds: 600 });
 
-    const aiEligible = unit.is_simulated && parsed.aiProcessingConsent && parsed.fictionalTestSubmission === true && approvedFictionalReporter(viewer.userId);
+    const aiEligible = unit.is_simulated && markedFictional && parsed.aiProcessingConsent && approvedFictionalAiReporter(viewer.userId);
     const { data: created, error: insertError } = await db.from("reports").insert({
       id: parsed.id, reporter_id: viewer.userId, polling_unit_id: parsed.pollingUnitId,
       category: parsed.category, description: parsed.description, occurred_at: parsed.occurredAt,

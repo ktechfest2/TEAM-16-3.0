@@ -40,7 +40,7 @@ async function selectUnit(page: Page) {
   await page.getByLabel("Polling unit", { exact: true }).selectOption(UNIT_ID);
 }
 
-test("fictional photo upload follows report receipt", async ({ page, context }) => {
+test("photo upload follows an ordinary report receipt", async ({ page, context }) => {
   await installSession(page);
   await fakePollingUnit(context);
   let postedReport: Record<string, unknown> | null = null;
@@ -69,7 +69,6 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
   await page.getByRole("button", { name: /Disruption/i }).first().click();
   await page.getByText(/Add details or photo \(optional\)/).click();
   await page.getByLabel("More details (optional)").fill("Fictional observation for the photo workflow.");
-  await page.getByLabel(/This is a fictional test with no real personal information/).check();
   await expect(page.getByLabel("Take a photo")).toHaveAttribute("capture", "environment");
   await page.getByLabel("Take a photo").setInputFiles({
     name: "fictional-camera.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
@@ -87,8 +86,8 @@ test("fictional photo upload follows report receipt", async ({ page, context }) 
   await save.focus();
   await page.keyboard.press("Enter");
 
-  await expect.poll(() => postedReport?.aiProcessingConsent).toBe(true);
-  await expect.poll(() => postedReport?.fictionalTestSubmission).toBe(true);
+  await expect.poll(() => postedReport?.aiProcessingConsent).toBe(false);
+  await expect.poll(() => postedReport?.fictionalTestSubmission).toBeUndefined();
   await expect.poll(() => evidenceKeys.length).toBe(2);
   expect(evidenceKeys.every((value) => /^[0-9a-f-]{36}$/i.test(value))).toBe(true);
   await expect(page.getByText(/Photo upload status/)).toBeVisible();
