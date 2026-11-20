@@ -70,7 +70,7 @@ export function AiAssessmentPanel({
       />
       <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-warn-soft p-3.5 text-[12.5px] leading-relaxed text-slate-ink/85">
         <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warn" aria-hidden />
-        <p>AI does not verify an allegation. The service checks reporter consent and simulated-unit eligibility. Missing provider credentials may produce a saved failed assessment; reporting and human review continue independently.</p>
+        <p>AI does not verify an allegation. Only approved fictional reports with consent are eligible. If assessment is unavailable, reporting and human review continue independently.</p>
       </div>
       <div className="mt-4 rounded-xl bg-canvas p-3.5 ring-1 ring-inset ring-[var(--hairline)]">
         <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-muted-ink">Authoritative workflow statuses</p>

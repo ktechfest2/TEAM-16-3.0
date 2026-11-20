@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/server/supabase";
 import { isUuid } from "@/lib/report-contract";
 import { parseNote } from "@/lib/case-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { judgeCanAccessAssignment } from "@/lib/server/judge-access";
 
 /**
  * Acknowledge an internal monitoring assignment.
@@ -19,6 +20,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         { error: { code: "INPUT", message: "Invalid assignment ID" } },
         { status: 400, headers: noStore },
       );
+    if (!(await judgeCanAccessAssignment(viewer.userId, id)))
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Assignment not found" } }, { status: 404, headers: noStore });
     const parsed = parseNote(await req.json().catch(() => null));
     const db = adminClient();
 

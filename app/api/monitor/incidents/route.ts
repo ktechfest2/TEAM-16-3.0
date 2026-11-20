@@ -3,6 +3,7 @@ import { getViewer } from "@/lib/server/auth";
 import { adminClient } from "@/lib/server/supabase";
 import { parseCase } from "@/lib/case-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { judgeCanAccessReport, keepSimulatedForJudge } from "@/lib/server/judge-access";
 
 /** Monitor case list, newest activity first. */
 export async function GET(req: Request) {
@@ -12,13 +13,17 @@ export async function GET(req: Request) {
       .from("incidents")
       .select(
         "id,summary,review_state,response_state,created_at,updated_at,polling_unit_id,created_by," +
-          "polling_units(code,name,ward,lga,state),incident_reports(report_id,reports(category,reporter_id))",
+          "polling_units(code,name,ward,lga,state,is_simulated),incident_reports(report_id,reports(category,reporter_id))",
       )
       .order("updated_at", { ascending: false })
-      .limit(50);
+      .limit(200);
     if (error) throw error;
     type Row = { created_by: string; review_state: string; incident_reports: { report_id: string; reports: { category: string; reporter_id: string } | { category: string; reporter_id: string }[] | null }[]; [key: string]: unknown };
-    return NextResponse.json({ incidents: ((data || []) as unknown as Row[]).map(({ created_by, incident_reports, ...row }) => ({
+    const visible = keepSimulatedForJudge(viewer.userId, (data || []) as unknown as Row[], (row) => {
+      const unit = row.polling_units as { is_simulated?: boolean } | { is_simulated?: boolean }[] | null;
+      return Array.isArray(unit) ? unit[0] : unit;
+    }).slice(0, 50);
+    return NextResponse.json({ incidents: visible.map(({ created_by, incident_reports, ...row }) => ({
       ...row,
       canReview: created_by !== viewer.userId && !incident_reports.some((link) => {
         const reports = link.reports ? (Array.isArray(link.reports) ? link.reports : [link.reports]) : [];
@@ -36,6 +41,8 @@ export async function POST(req: Request) {
   try {
     const viewer = await getViewer(req, ["monitor", "admin"]);
     const parsed = parseCase(await req.json().catch(() => null));
+    if (await Promise.all(parsed.reportIds.map((reportId) => judgeCanAccessReport(viewer.userId, reportId))).then((allowed) => allowed.some((value) => !value)))
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Reports not found" } }, { status: 404, headers: noStore });
     const id = crypto.randomUUID();
     const { data, error } = await adminClient().rpc("signa_group_reports", {
       p_actor: viewer.userId, p_case_id: id, p_report_ids: parsed.reportIds,

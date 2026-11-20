@@ -215,7 +215,7 @@ export default function HomePage() {
             "Independent prototype",
             "No emergency dispatch",
             "No public incident feed",
-            "Simulated polling units",
+            "Nationwide directory snapshot",
           ].map((item) => (
             <span key={item} className="flex items-center gap-2 text-[12.5px] font-medium text-slate-ink/75">
               <CheckCircle2 className="size-3.5 text-trust" aria-hidden />

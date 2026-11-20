@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/server/supabase";
 import { isUuid } from "@/lib/report-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
 import { approvedFictionalReport } from "@/lib/server/fictional-ai";
+import { judgeCanAccessIncident } from "@/lib/server/judge-access";
 
 /** Full case file: linked reports, recorded reviews, assignment and audit timeline. */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         { error: { code: "INPUT", message: "Invalid case ID" } },
         { status: 400, headers: noStore },
       );
+    if (!(await judgeCanAccessIncident(viewer.userId, id)))
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
 
     const db = adminClient();
     if (viewer.role === "coordinator") {

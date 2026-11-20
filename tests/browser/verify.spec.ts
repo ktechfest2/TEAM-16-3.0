@@ -34,3 +34,21 @@ test("Verify reports provider failure without inventing a result", async ({ page
   await expect(page.getByText("A required service is temporarily unavailable", { exact: true })).toBeVisible();
   await expect(page.getByText(/Supported by available evidence/)).toHaveCount(0);
 });
+
+test("Verify presents separate text, link and image modes with inline results", async ({ page, context }) => {
+  await context.route("**/api/verify", route => route.fulfill({ json: {
+    analysisStatus: "completed", analysis: { outcome: "insufficient_evidence", explanation: "No matching review was returned.", citedSourceIds: [], uncertainty: "Coverage may be incomplete." }, sources: [], coverage: [], inputSource: null, linkWarning: null, notice: "No certification is made.",
+  } }));
+  await page.goto("/verify");
+  await expect(page.getByRole("tab", { name: "Text" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "Link" }).click();
+  await expect(page.getByLabel("Public article link")).toBeVisible();
+  await page.getByRole("tab", { name: "Image" }).click();
+  await expect(page.getByLabel("Image to inspect")).toBeVisible();
+  await expect(page.getByText(/Screenshot extraction is not enabled/)).toHaveCount(0);
+  await page.getByRole("tab", { name: "Text" }).click();
+  await page.getByLabel("Claim or message").fill("A controlled fictional election claim");
+  await page.getByLabel(/I agree that the text/).check();
+  await page.getByRole("button", { name: "Check available evidence" }).click();
+  await expect(page.getByText("Insufficient evidence", { exact: true })).toBeVisible();
+});

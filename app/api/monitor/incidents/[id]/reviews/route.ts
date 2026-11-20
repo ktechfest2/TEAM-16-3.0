@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/server/supabase";
 import { isUuid } from "@/lib/report-contract";
 import { parseReview } from "@/lib/case-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { judgeCanAccessIncident } from "@/lib/server/judge-access";
 
 /** Record a human review outcome. Previous reviews are preserved, never overwritten. */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -15,6 +16,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         { error: { code: "INPUT", message: "Invalid case ID" } },
         { status: 400, headers: noStore },
       );
+    if (!(await judgeCanAccessIncident(viewer.userId, id)))
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
     const parsed = parseReview(await req.json().catch(() => null));
     const db = adminClient();
     const { data: reviewId, error: reviewError } = await db.rpc("signa_review_case_with_evidence", {

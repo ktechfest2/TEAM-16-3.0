@@ -4,6 +4,7 @@ import { adminClient } from "@/lib/server/supabase";
 import { isUuid } from "@/lib/report-contract";
 import { parseAssignment } from "@/lib/case-contract";
 import { errorResponse, noStore } from "@/lib/server/responses";
+import { isRestrictedJudge, judgeCanAccessIncident } from "@/lib/server/judge-access";
 
 /**
  * Route a reviewed case to an approved coordinator.
@@ -19,7 +20,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         { error: { code: "INPUT", message: "Invalid case ID" } },
         { status: 400, headers: noStore },
       );
+    if (!(await judgeCanAccessIncident(viewer.userId, id)))
+      return NextResponse.json({ error: { code: "NOT_FOUND", message: "Case not found" } }, { status: 404, headers: noStore });
     const parsed = parseAssignment(await req.json().catch(() => null));
+    if (isRestrictedJudge(viewer.userId) && !isRestrictedJudge(parsed.coordinatorId))
+      return NextResponse.json({ error: { code: "ACCESS", message: "Choose a coordinator in the supervised fictional workspace" } }, { status: 403, headers: noStore });
     const db = adminClient();
 
     const { data: assignmentId, error: assignError } = await db.rpc("signa_assign_case", {
