@@ -26,6 +26,7 @@ test("directory follows codes, resets children, and finds exact leading-zero cod
   await expect(page.getByText(/Confirmed: 01\/01\/01\/001/)).toBeVisible();
   await page.getByLabel("State or FCT", { exact: true }).selectOption("02");
   await expect(page.getByText(/Confirmed: 01\/01\/01\/001/)).toHaveCount(0);
+  await page.getByText("Advanced: find by full polling-unit code", { exact: true }).click();
   await page.getByLabel("Full polling-unit code").fill("01/01/01/001");
   await page.getByRole("button", { name: "Find code" }).click();
   await expect(page.getByText(/Confirmed: 01\/01\/01\/001/)).toBeVisible();
@@ -34,23 +35,21 @@ test("directory follows codes, resets children, and finds exact leading-zero cod
   await expect(page.getByLabel("Ward", { exact: true })).toHaveValue("01");
 });
 
-test("parent changes immediately clear dependent options, selections, and filters", async ({ page, context }) => {
+test("parent changes immediately clear dependent options and selections without standalone search fields", async ({ page, context }) => {
   await mockDirectory(context);
   await page.goto("/report");
   await page.getByLabel("State or FCT", { exact: true }).selectOption("01");
   await page.getByLabel("LGA", { exact: true }).selectOption("01");
   await page.getByLabel("Ward", { exact: true }).selectOption("01");
   await page.getByLabel("Polling unit", { exact: true }).selectOption(UNIT.id);
-  await page.getByLabel("Search LGA").fill("ABA");
-  await page.getByLabel("Search Ward").fill("EZI");
-  await page.getByLabel("Search Polling unit").fill("RAIL");
+  await expect(page.getByRole("searchbox")).toHaveCount(0);
   await page.getByLabel("State or FCT", { exact: true }).selectOption("02");
   await expect(page.getByLabel("LGA", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Ward", { exact: true })).toBeDisabled();
   await expect(page.getByLabel("Polling unit", { exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Search LGA")).toHaveValue("");
-  await expect(page.getByLabel("Search Ward")).toHaveValue("");
-  await expect(page.getByLabel("Search Polling unit")).toHaveValue("");
+  await expect(page.getByLabel("LGA", { exact: true }).locator("option", { hasText: "ABA NORTH" })).toHaveCount(0);
+  await expect(page.getByLabel("Ward", { exact: true }).locator("option")).toHaveCount(1);
+  await expect(page.getByLabel("Polling unit", { exact: true }).locator("option")).toHaveCount(1);
   await expect(page.getByText(/Confirmed:/)).toHaveCount(0);
 });
 

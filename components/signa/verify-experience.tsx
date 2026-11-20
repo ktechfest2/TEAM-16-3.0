@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/signa/page-header";
 import type { VerifyAnalysis, VerifyOutcome, VerifySource } from "@/lib/verify-contract";
+import { MediaIntegrityPanel } from "@/components/signa/media-integrity-panel";
 
 type Result = {
   analysisStatus: "completed" | "provider_unavailable";
@@ -25,7 +26,7 @@ const labels: Record<VerifyOutcome, string> = {
   insufficient_evidence: "Insufficient evidence",
 };
 
-export function VerifyExperience({ enabled, linksEnabled }: { enabled: boolean; linksEnabled: boolean }) {
+export function VerifyExperience({ enabled, linksEnabled, mediaExternalEnabled }: { enabled: boolean; linksEnabled: boolean; mediaExternalEnabled: boolean }) {
   const [claim, setClaim] = useState("");
   const [articleUrl, setArticleUrl] = useState("");
   const [consent, setConsent] = useState(false);
@@ -60,6 +61,7 @@ export function VerifyExperience({ enabled, linksEnabled }: { enabled: boolean; 
         {error && <p role="alert" className="rounded-xl bg-alert/5 p-3 text-sm text-alert">{error}</p>}
       </form>
     </Card>
+    <MediaIntegrityPanel externalEnabled={mediaExternalEnabled} onUseText={(text) => { setClaim(text); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
     {result && <section className="mt-6 space-y-5" aria-live="polite">
       <Card className="p-5 sm:p-6">
         <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-signal/10 px-3 py-1 text-sm font-semibold text-signal">{labels[result.analysis.outcome]}</span>{result.analysisStatus !== "completed" && <span className="rounded-full bg-warn-soft px-3 py-1 text-xs font-semibold text-slate-ink">Analysis unavailable</span>}</div>

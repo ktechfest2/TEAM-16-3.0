@@ -39,6 +39,7 @@ export default defineConfig({
       SIGNA_VERIFY_LINKS_ENABLED: "true",
       GOOGLE_FACT_CHECK_API_KEY: "fixture_fact_check_key",
       GEMINI_API_KEY: "fixture_gemini_key",
+      SIGNA_MEDIA_GEMINI_ENABLED: "true",
       SIGNA_DEMO_MODE: "true",
       SIGNA_DEMO_PROJECT_REF: "abcdefghijklmnopqrst",
       SIGNA_DEMO_SESSION_MAX_SECONDS: "1800",

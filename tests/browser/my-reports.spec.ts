@@ -310,6 +310,9 @@ test("first-time offline drafts stay saved but remain hidden on a signed-out sha
   });
 
   await page.goto("/report");
+  // The nationwide directory must be cached before the browser loses its
+  // network; first-time offline reports can then preserve that confirmed unit.
+  await expect(page.getByLabel("State or FCT", { exact: true }).locator('option[value="01"]')).toHaveCount(1);
   await context.setOffline(true);
   await page.getByLabel("State or FCT", { exact: true }).selectOption("01");
   await page.getByLabel("LGA", { exact: true }).selectOption("01");

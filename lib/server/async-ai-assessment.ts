@@ -2,6 +2,7 @@ import "server-only";
 import { adminClient } from "@/lib/server/supabase";
 import { observeWithGemini } from "@/lib/server/ai-assessment";
 import { approvedFictionalReport } from "./fictional-ai";
+import { enforceAbuseLimit } from "./rate-limit";
 
 /** Runs after the report/evidence response has been sent; always remains provisional. */
 export async function runConsentAssessment(reportId: string): Promise<void> {
@@ -26,6 +27,11 @@ export async function runConsentAssessment(reportId: string): Promise<void> {
   let observation = null;
   let failure: string | null = null;
   try {
+    // Automatic provider work has its own durable reporter quota in addition
+    // to report/evidence submission limits. It fails closed before billing.
+    await enforceAbuseLimit(new Request("https://signa.internal/ai-assessment"), report.reporter_id, {
+      scope: "ai_assessment", reporterMax: 12, ipMax: 1, windowSeconds: 600,
+    });
     const images: Array<{ mimeType: string; bytes: Uint8Array }> = [];
     for (const item of evidence || []) {
       if (!( ["image/jpeg", "image/png", "image/webp"] as string[]).includes(item.mime_type)) continue;
