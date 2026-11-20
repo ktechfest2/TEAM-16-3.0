@@ -135,15 +135,15 @@ export default function HomePage() {
               </Reveal>
 
               <Reveal delay={0.24}>
-                <dl className="mt-12 grid max-w-lg grid-cols-3 gap-6 border-t border-white/10 pt-7">
+                <dl className="mt-0 grid max-w-lg gap-y-2 border-t border-white/10 pt-4 sm:mt-12 sm:grid-cols-3 sm:gap-6 sm:pt-7">
                   {[
                     { k: "Clear receipt", v: "Device save is not server delivery" },
                     { k: "Human review", v: "A written outcome is required" },
                     { k: "Internal follow-up", v: "No emergency dispatch" },
                   ].map((stat) => (
-                    <div key={stat.k}>
-                      <dt className="font-display text-[15px] font-semibold text-white">{stat.k}</dt>
-                      <dd className="mt-1 text-[12.5px] leading-snug text-[#8699B5]">{stat.v}</dd>
+                    <div key={stat.k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 border-b border-white/10 pb-2 last:border-0 last:pb-0 sm:block sm:border-0 sm:pb-0">
+                      <dt className="font-display text-[13.5px] font-semibold text-white sm:text-[15px]">{stat.k}</dt>
+                      <dd className="text-[12.5px] leading-snug text-[#AAB9CE] sm:mt-1">{stat.v}</dd>
                     </div>
                   ))}
                 </dl>
@@ -164,7 +164,7 @@ export default function HomePage() {
                       <span className="size-2 rounded-full bg-signal" aria-hidden />
                       From report to record
                     </div>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-ink">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-ink/80">
                       Process
                     </span>
                   </div>
@@ -185,7 +185,7 @@ export default function HomePage() {
                       {
                         icon: ClipboardCheck,
                         title: "Internal follow-up",
-                        detail: "Coordinator logs next steps",
+                        detail: "For supported cases routed to a coordinator",
                         tone: "text-slate-ink",
                       },
                     ].map(({ icon: Icon, title, detail, tone }, index) => (
@@ -204,7 +204,7 @@ export default function HomePage() {
                         </span>
                         <div className="min-w-0 pt-0.5">
                           <p className="text-[14px] font-semibold text-navy">{title}</p>
-                          <p className="mt-0.5 text-[12px] text-slate-ink/70">{detail}</p>
+                          <p className="mt-0.5 text-[12px] text-slate-ink/80">{detail}</p>
                         </div>
                       </div>
                     ))}

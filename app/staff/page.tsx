@@ -10,7 +10,7 @@ const workspaces = [
   {
     href: "/monitor",
     title: "Incident Review",
-    description: "Review incoming reports, group related observations and record an independent written outcome.",
+    description: "Review incoming reports and group related observations. Independent review must be recorded by another authorized reviewer who neither created the case nor submitted any linked report.",
     icon: Scale,
   },
   {
