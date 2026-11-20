@@ -26,7 +26,8 @@ function isActive(pathname: string, href: string) {
 
 export function SiteHeader() {
   const pathname = usePathname() || "/";
-  const nav = isStaff(pathname) ? staffNav : publicNav;
+  const staffWorkspace = isStaff(pathname);
+  const nav = staffWorkspace ? staffNav : publicNav;
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--hairline)] glass">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -52,11 +53,11 @@ export function SiteHeader() {
           })}
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild variant="alert" size="sm">
-            <Link href="/report">
-              <Siren className="size-4" aria-hidden />
-              <span className="hidden sm:inline">Report an incident</span>
-              <span className="sm:hidden">Report</span>
+          <Button asChild variant={staffWorkspace ? "secondary" : "alert"} size="sm">
+            <Link href={staffWorkspace ? "/staff" : "/report"}>
+              {staffWorkspace ? <Home className="size-4" aria-hidden /> : <Siren className="size-4" aria-hidden />}
+              <span className="hidden sm:inline">{staffWorkspace ? "Staff home" : "Report an incident"}</span>
+              <span className="sm:hidden">{staffWorkspace ? "Staff" : "Report"}</span>
             </Link>
           </Button>
         </div>

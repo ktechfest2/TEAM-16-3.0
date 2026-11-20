@@ -314,7 +314,7 @@ export default function ReportPage() {
           actions={
             <Badge tone={online ? "ok" : "warn"} size="lg">
               {online ? <Wifi aria-hidden /> : <WifiOff aria-hidden />}
-              {online ? "Online" : "Offline — reports still save"}
+              {online ? "Online" : "Offline — local save; delivery pending"}
             </Badge>
           }
         />

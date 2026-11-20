@@ -1,7 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight, CheckCircle2, Eye, FileSearch, Lock, Radio, ShieldCheck, Siren,
-  WifiOff, Users, Scale, MapPin,
+  WifiOff, Users, Scale, CircleDot, ClipboardCheck, UserRoundCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { PageShell } from "@/components/signa/shell";
 import { Reveal, RevealOnScroll } from "@/components/signa/motion";
 import { Eyebrow, SectionHeading } from "@/components/signa/page-header";
-import { CategoryGlyph, ResponseChip, ReviewChip } from "@/components/signa/status-chip";
+import { CategoryGlyph } from "@/components/signa/status-chip";
 import { categoryMeta } from "@/lib/taxonomy";
 
 const pillars = [
@@ -20,8 +20,8 @@ const pillars = [
     tone: "alert" as const,
     title: "A witness raises a signal",
     body:
-      "A reporter captures what they saw in under a minute — on a weak network, with a hold-to-send guard against accidental alerts. Nothing is lost if the connection drops.",
-    points: ["Works offline, syncs later", "Hold-to-send confirmation", "Anonymous reporter session"],
+      "A witness selects a polling unit and records an observation. When a report is saved on the device, its delivery state stays visible until the server confirms receipt.",
+    points: ["Local save and server receipt are distinct", "Clear delivery status", "Reporter session stays private"],
   },
   {
     step: "02",
@@ -63,15 +63,9 @@ const guarantees = [
   },
   {
     icon: WifiOff,
-    title: "Built for bad networks",
-    body: "An on-device outbox keeps reports safe until the server confirms receipt — and says plainly which state a report is in.",
+    title: "Clear delivery status",
+    body: "The outbox distinguishes a local save from server receipt. Unsynced drafts stay in this browser and are removed if its data is cleared.",
   },
-];
-
-const previewRows = [
-  { category: "disruption", title: "Accreditation paused", unit: "PU 24-118" },
-  { category: "intimidation", title: "Pressure on the queue", unit: "PU 24-118" },
-  { category: "missing_materials", title: "Result sheets late", unit: "PU 24-120" },
 ];
 
 const toneRing: Record<string, string> = {
@@ -108,19 +102,18 @@ export default function HomePage() {
 
               <Reveal delay={0.06}>
                 <h1 className="mt-6 font-display text-[40px] font-semibold leading-[1.02] tracking-[-0.03em] text-white sm:text-[58px]">
-                  Every alert matters.
+                  Report what you saw.
                   <br />
-                  <span className="bg-gradient-to-r from-white via-white to-[#93B4FF] bg-clip-text text-transparent">
-                    Every report counts.
+                  <span className="text-[#93B4FF]">
+                    Track each step.
                   </span>
                 </h1>
               </Reveal>
 
               <Reveal delay={0.12}>
                 <p className="mt-6 max-w-xl text-[17px] leading-relaxed text-[#AEBDD4] sm:text-[18px]">
-                  Signa turns scattered election-day observations into reviewed, accountable cases.
-                  Witnesses alert. Trained monitors verify. Coordinators respond — with a written
-                  record at every step.
+                  Signa records election incident reports and shows what happens next. Authorized
+                  monitors review allegations; coordinators log internal follow-up.
                 </p>
               </Reveal>
 
@@ -142,22 +135,22 @@ export default function HomePage() {
               </Reveal>
 
               <Reveal delay={0.24}>
-                <dl className="mt-12 grid max-w-lg grid-cols-3 gap-6 border-t border-white/10 pt-7">
+                <dl className="mt-0 grid max-w-lg gap-y-2 border-t border-white/10 pt-4 sm:mt-12 sm:grid-cols-3 sm:gap-6 sm:pt-7">
                   {[
-                    { k: "3 steps", v: "Alert · Verify · Respond" },
-                    { k: "Offline-first", v: "Nothing lost on weak networks" },
-                    { k: "Human-reviewed", v: "No automated verdicts" },
+                    { k: "Clear receipt", v: "Device save is not server delivery" },
+                    { k: "Human review", v: "A written outcome is required" },
+                    { k: "Internal follow-up", v: "No emergency dispatch" },
                   ].map((stat) => (
-                    <div key={stat.k}>
-                      <dt className="font-display text-[15px] font-semibold text-white">{stat.k}</dt>
-                      <dd className="mt-1 text-[12.5px] leading-snug text-[#8699B5]">{stat.v}</dd>
+                    <div key={stat.k} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] gap-x-3 border-b border-white/10 pb-2 last:border-0 last:pb-0 sm:block sm:border-0 sm:pb-0">
+                      <dt className="font-display text-[13.5px] font-semibold text-white sm:text-[15px]">{stat.k}</dt>
+                      <dd className="text-[12.5px] leading-snug text-[#AAB9CE] sm:mt-1">{stat.v}</dd>
                     </div>
                   ))}
                 </dl>
               </Reveal>
             </div>
 
-            {/* Illustrative interface preview — labelled, never presented as live data */}
+            {/* A process preview without fictional incident records. */}
             <Reveal delay={0.2} y={24} className="hidden lg:block">
               <div className="relative">
                 <div
@@ -168,38 +161,56 @@ export default function HomePage() {
                 <Card className="relative overflow-hidden p-0 shadow-lg">
                   <div className="flex items-center justify-between border-b border-[var(--hairline)] bg-white px-5 py-3.5">
                     <div className="flex items-center gap-2 text-[13px] font-semibold text-navy">
-                      <span className="size-2 rounded-full bg-alert" aria-hidden />
-                      Case review
+                      <span className="size-2 rounded-full bg-signal" aria-hidden />
+                      From report to record
                     </div>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-ink">
-                      Illustrative
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-ink/80">
+                      Process
                     </span>
                   </div>
                   <div className="space-y-3.5 bg-canvas p-5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <ReviewChip state="under_review" size="sm" />
-                      <ResponseChip state="assigned" size="sm" />
-                    </div>
-                    {previewRows.map((row) => (
+                    {[
+                      {
+                        icon: CircleDot,
+                        title: "Report received",
+                        detail: "Receipt is not a verdict",
+                        tone: "text-signal",
+                      },
+                      {
+                        icon: UserRoundCheck,
+                        title: "Human review",
+                        detail: "Outcome and rationale recorded",
+                        tone: "text-trust",
+                      },
+                      {
+                        icon: ClipboardCheck,
+                        title: "Internal follow-up",
+                        detail: "For supported cases routed to a coordinator",
+                        tone: "text-slate-ink",
+                      },
+                    ].map(({ icon: Icon, title, detail, tone }, index) => (
                       <div
-                        key={row.title}
-                        className="flex items-center gap-3 rounded-[14px] bg-white p-3.5 ring-1 ring-[var(--hairline)] shadow-xs"
+                        key={title}
+                        className="relative flex items-start gap-3 rounded-[14px] bg-white p-4 ring-1 ring-[var(--hairline)] shadow-xs"
                       >
-                        <CategoryGlyph value={row.category} />
-                        <div className="min-w-0">
-                          <p className="truncate text-[14px] font-semibold text-navy">{row.title}</p>
-                          <p className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-ink/70">
-                            <MapPin className="size-3" aria-hidden /> {row.unit} · simulated
-                          </p>
+                        {index < 2 && (
+                          <span
+                            className="absolute left-[25px] top-12 h-5 border-l border-dashed border-[var(--hairline-strong)]"
+                            aria-hidden
+                          />
+                        )}
+                        <span className={`grid size-9 shrink-0 place-items-center rounded-full bg-canvas ${tone}`}>
+                          <Icon className="size-4" aria-hidden />
+                        </span>
+                        <div className="min-w-0 pt-0.5">
+                          <p className="text-[14px] font-semibold text-navy">{title}</p>
+                          <p className="mt-0.5 text-[12px] text-slate-ink/80">{detail}</p>
                         </div>
                       </div>
                     ))}
-                    <div className="rounded-[14px] border border-dashed border-[var(--hairline-strong)] bg-white/70 p-3.5">
-                      <p className="text-[12.5px] leading-relaxed text-slate-ink/80">
-                        <span className="font-semibold text-navy">Reviewer note required.</span>{" "}
-                        A case cannot change state without a written rationale.
-                      </p>
-                    </div>
+                    <p className="rounded-[14px] border border-dashed border-[var(--hairline-strong)] bg-white/70 p-3.5 text-[12.5px] leading-relaxed text-slate-ink/80">
+                      Signa records allegations and human decisions. It does not establish truth or contact emergency responders.
+                    </p>
                   </div>
                 </Card>
               </div>
@@ -366,8 +377,8 @@ export default function HomePage() {
                 Saw something at a polling unit?
               </h2>
               <p className="mx-auto mt-4 max-w-xl text-[16px] leading-relaxed text-[#AEBDD4]">
-                It takes less than a minute, works without a stable connection, and goes to a human
-                — not a feed.
+                An on-device save is labeled separately from server receipt. Only a confirmed
+                receipt means the server received the report.
               </p>
               <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
                 <Button asChild variant="alert" size="xl">
