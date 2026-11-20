@@ -22,5 +22,6 @@ test("judge provisioning preserves UUIDs, checks trusted roles, and never prints
   assert.match(script, /auth\.admin\.updateUserById\(account\.id/);
   assert.match(script, /profile\.role !== account\.role/);
   assert.match(script, /SIGNA_JUDGE_CREDENTIAL_OUTPUT must be an absolute path outside the repository/);
+  assert.match(script, /process\.argv\.includes\("--rotate"\)/);
   assert.doesNotMatch(script, /console\.log\(.*password/);
 });

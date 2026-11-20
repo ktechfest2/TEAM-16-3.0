@@ -4,7 +4,8 @@ const { randomBytes } = require("node:crypto");
 const { writeFileSync } = require("node:fs");
 const { isAbsolute, relative } = require("node:path");
 
-const apply = process.argv.includes("--apply");
+const rotate = process.argv.includes("--rotate");
+const apply = process.argv.includes("--apply") || rotate;
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const secret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const output = process.env.SIGNA_JUDGE_CREDENTIAL_OUTPUT || "";
@@ -28,7 +29,9 @@ const supabase = createClient(url, secret, { auth: { autoRefreshToken: false, pe
       supabase.from("profiles").select("id,role,display_name").eq("id", account.id).maybeSingle(),
     ]);
     if (authError || !auth.user || profileError || !profile) throw new Error(`${account.label} could not be verified`);
-    if (!auth.user.email?.toLowerCase().endsWith(".invalid")) throw new Error(`${account.label} is not an approved placeholder test account`);
+    const currentEmail = auth.user.email?.toLowerCase() || "";
+    if (rotate ? currentEmail !== account.email : !currentEmail.endsWith(".invalid"))
+      throw new Error(`${account.label} is not in the expected ${rotate ? "provisioned" : "placeholder"} state`);
     if (profile.role !== account.role) throw new Error(`${account.label} has an unexpected trusted role`);
   }
   if (!apply) {
@@ -38,7 +41,8 @@ const supabase = createClient(url, secret, { auth: { autoRefreshToken: false, pe
   const credentials = [];
   for (const account of accounts) {
     const password = `${randomBytes(24).toString("base64url")}!9a`;
-    const { data, error } = await supabase.auth.admin.updateUserById(account.id, { email: account.email, password, email_confirm: true });
+    const attributes = rotate ? { password } : { email: account.email, password, email_confirm: true };
+    const { data, error } = await supabase.auth.admin.updateUserById(account.id, attributes);
     if (error || data.user?.id !== account.id) throw new Error(`${account.label} update failed`);
     credentials.push({ role: account.label, email: account.email, password, userId: account.id });
   }
