@@ -28,7 +28,7 @@ type InboxReport = {
   category: string;
   description: string;
   received_at: string;
-  polling_units: { code: string; name: string } | null;
+  polling_units: { code: string; name: string; state?: string; lga?: string; ward?: string } | null;
   incident_reports: { incident_id: string }[] | { incident_id: string } | null;
   aiAssessment?: { status: string; provisional_summary: string | null } | null;
 };
@@ -39,7 +39,7 @@ type CaseRow = {
   review_state: ReviewState;
   response_state: ResponseState;
   updated_at: string;
-  polling_units: { code: string; name: string; ward: string | null; lga: string | null } | null;
+  polling_units: { code: string; name: string; ward: string | null; lga: string | null; state?: string | null } | null;
   incident_reports: { report_id: string; reports: { category: string } | null }[];
   canReview?: boolean;
 };
@@ -382,7 +382,7 @@ export default function MonitorPage() {
                       </p>
                       <p className="mt-2 text-[12.5px] text-slate-ink/75">
                         {item.polling_units
-                          ? `${item.polling_units.code} · ${item.polling_units.name}`
+                          ? `${item.polling_units.code} · ${item.polling_units.name}${item.polling_units.state ? ` · ${item.polling_units.ward}, ${item.polling_units.lga}, ${item.polling_units.state}` : ""}`
                           : "Polling unit unavailable"}
                       </p>
                       <div className="mt-4 flex items-center justify-between border-t border-[var(--hairline)] pt-3.5">

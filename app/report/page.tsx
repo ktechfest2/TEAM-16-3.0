@@ -17,12 +17,15 @@ import { PageShell } from "@/components/signa/shell";
 import { PageHeader } from "@/components/signa/page-header";
 import { SafetyNotice } from "@/components/signa/safety-notice";
 import { DeliveryChip } from "@/components/signa/status-chip";
+import type { DeliveryState } from "@/lib/taxonomy";
 import { AnimatePresence, Reveal, motion } from "@/components/signa/motion";
 import { cn, shortRef } from "@/lib/utils";
 import { MAX_EVIDENCE_BYTES } from "@/lib/evidence-contract";
+import { DirectoryPicker } from "@/components/signa/directory-picker";
 
-type Unit = { id: string; code: string; name: string; is_simulated: boolean };
+type Unit = { id: string; code: string; name: string; is_simulated: boolean; state?: string; lga?: string; ward?: string };
 type SelectedPhoto = { evidenceId: string; file: File };
+type FictionalAccess = { enabled: boolean; aiProcessingEnabled: boolean; units: Unit[] };
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 
@@ -31,13 +34,17 @@ export default function ReportPage() {
   const [unitId, setUnitId] = useState("");
   const [category, setCategory] = useState<string>("");
   const [description, setDescription] = useState("");
-  const [fictionalTest, setFictionalTest] = useState(false);
+  const [fictionalAccess, setFictionalAccess] = useState<FictionalAccess>({ enabled: false, aiProcessingEnabled: false, units: [] });
+  const [locationMode, setLocationMode] = useState<"actual" | "simulated">("actual");
+  const [aiProcessingConsent, setAiProcessingConsent] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState(true);
   const [lastSavedRef, setLastSavedRef] = useState("");
+  const latestReportRef = useRef<{ id: string; reporterId: string | null; delivery: DeliveryState }>({ id: "", reporterId: null, delivery: "saved" });
+  const [latestReport, setLatestReport] = useState<{ id: string; reporterId: string | null; delivery: DeliveryState }>({ id: "", reporterId: null, delivery: "saved" });
   const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
   const [photosForReportId, setPhotosForReportId] = useState<string | null>(null);
   const [photosForReporterId, setPhotosForReporterId] = useState<string | null>(null);
@@ -47,7 +54,33 @@ export default function ReportPage() {
   const galleryInput = useRef<HTMLInputElement>(null);
   const pendingGeneration = useRef(0);
   const syncGeneration = useRef(0);
+  const fictionalAccessGeneration = useRef(0);
   const submitting = useRef(false);
+
+  const refreshFictionalAccess = useCallback(async (known?: { accessToken: string; reporterId: string } | null) => {
+    const generation = ++fictionalAccessGeneration.current;
+    try {
+      const session = known === undefined ? (await getCitizenSession()).data.session : null;
+      const accessToken = known?.accessToken ?? session?.access_token;
+      if (!accessToken) throw new Error("No reporter session");
+      const response = await fetch("/api/polling-units", { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+      if (!response.ok) throw new Error("Fictional reporting unavailable");
+      const body = await response.json() as { fictionalReportingEnabled?: boolean; aiProcessingEnabled?: boolean; units?: Unit[] };
+      if (generation !== fictionalAccessGeneration.current || body.fictionalReportingEnabled !== true) return;
+      const units = (body.units ?? []).filter((unit) => unit.is_simulated === true && !!unit.id);
+      setFictionalAccess({ enabled: true, aiProcessingEnabled: body.aiProcessingEnabled === true, units });
+    } catch {
+      if (generation !== fictionalAccessGeneration.current) return;
+      setFictionalAccess({ enabled: false, aiProcessingEnabled: false, units: [] });
+      setLocationMode("actual");
+      setAiProcessingConsent(false);
+      setUnits((current) => {
+        if (!current.some((unit) => unit.is_simulated)) return current;
+        setUnitId("");
+        return [];
+      });
+    }
+  }, []);
 
   const refreshPending = useCallback(async () => {
     const generation = ++pendingGeneration.current;
@@ -71,19 +104,30 @@ export default function ReportPage() {
   }, []);
 
   useEffect(() => {
-    const lastUnit = localStorage.getItem("signa:last-polling-unit");
-    if (lastUnit) setUnitId(lastUnit);
-    const cached = localStorage.getItem("signa-units");
-    if (cached) { try { setUnits(JSON.parse(cached)); } catch {} }
-    void fetch("/api/polling-units").then(r=>r.json()).then(data=>{
-      if (Array.isArray(data.units)) { setUnits(data.units); localStorage.setItem("signa-units", JSON.stringify(data.units)); }
-    }).catch(()=>{});
+    const cached = localStorage.getItem("signa:last-confirmed-unit");
+    if (cached) { try { const unit = JSON.parse(cached) as Unit; if (!unit.is_simulated && unit.id) { setUnits([unit]); setUnitId(unit.id); } } catch {} }
     let unsubscribe: (() => void) | undefined;
     try {
-      const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange(() => {
+      const { data: { subscription } } = citizenSupabase().auth.onAuthStateChange((_event, session) => {
         pendingGeneration.current += 1;
         syncGeneration.current += 1;
+        if (latestReportRef.current.id && latestReportRef.current.reporterId !== (session?.user.id ?? null)) {
+          latestReportRef.current = { id: "", reporterId: null, delivery: "saved" };
+          setLatestReport(latestReportRef.current);
+          setNotice("");
+        }
         setPending(0);
+        if (!session) {
+          fictionalAccessGeneration.current += 1;
+          setFictionalAccess({ enabled: false, aiProcessingEnabled: false, units: [] });
+          setLocationMode("actual");
+          setAiProcessingConsent(false);
+          setUnits((current) => {
+            if (!current.some((unit) => unit.is_simulated)) return current;
+            setUnitId("");
+            return [];
+          });
+        } else void refreshFictionalAccess({ accessToken: session.access_token, reporterId: session.user.id });
         window.setTimeout(() => void refreshPending(), 0);
       });
       unsubscribe = () => subscription.unsubscribe();
@@ -92,6 +136,7 @@ export default function ReportPage() {
     }
     void refreshPending();
     void refreshEvidence();
+    void refreshFictionalAccess();
     setOnline(navigator.onLine);
     const onOnline = () => { setOnline(true); void sync(); };
     const onOffline = () => setOnline(false);
@@ -102,9 +147,9 @@ export default function ReportPage() {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [refreshEvidence, refreshPending]);
+  }, [refreshEvidence, refreshFictionalAccess, refreshPending]);
 
-  async function sync() {
+  async function sync(submitted?: { id: string; reporterId: string | null }) {
     const generation = ++syncGeneration.current;
     try {
       const { data: { session: initialSession } } = await getCitizenSession();
@@ -114,6 +159,12 @@ export default function ReportPage() {
         await refreshPending();
         return;
       }
+      const active = submitted ?? latestReportRef.current;
+      if (active.id && active.reporterId && active.reporterId === currentSession?.user.id && result.delivered.includes(active.id) && latestReportRef.current.id === active.id && latestReportRef.current.reporterId === active.reporterId) {
+        latestReportRef.current = { ...active, delivery: "received" };
+        setLatestReport(latestReportRef.current);
+        setNotice(`Report ${active.id.slice(0, 8)} received by the server.`);
+      }
       await refreshPending();
       if (currentSession?.user.id && currentSession.access_token) {
         const evidenceResult = await flushQueuedEvidence(currentSession.user.id, currentSession.access_token);
@@ -121,7 +172,6 @@ export default function ReportPage() {
         else if (evidenceResult.received.length) setEvidenceError("");
       }
       await refreshEvidence();
-      if (result.delivered.length) setNotice(`${result.delivered.length} report(s) received by the server.`);
       if (result.errors.length) setError(result.errors.join("; "));
     } catch { setError("Could not check pending reports. They remain saved locally."); }
   }
@@ -131,11 +181,15 @@ export default function ReportPage() {
     submitting.current = true;
     setBusy(true); setError("");
     try {
+      const fictionalSubmission = selectedUnit?.is_simulated === true;
       const payload: ReportPayload = parseReport({
         id: crypto.randomUUID(), pollingUnitId: unitId, category,
         description, clientCreatedAt: new Date().toISOString(), occurredAt: null,
-        aiProcessingConsent: fictionalTest, fictionalTestSubmission: fictionalTest,
+        aiProcessingConsent: fictionalSubmission && fictionalAccess.aiProcessingEnabled && aiProcessingConsent,
+        fictionalTestSubmission: fictionalSubmission,
       });
+      latestReportRef.current = { id: payload.id, reporterId: null, delivery: "sending" };
+      setLatestReport(latestReportRef.current);
       let reporterId: string | null = null;
       try {
         let { data: { session } } = await getCitizenSession();
@@ -148,6 +202,8 @@ export default function ReportPage() {
         // Offline reports without a session remain unassigned and are never shown to another reporter.
       }
       await queueReport(payload, reporterId);
+      latestReportRef.current = { id: payload.id, reporterId, delivery: "saved" };
+      setLatestReport(latestReportRef.current);
       if (selectedPhotos.length && !photosForReportId) {
         setPhotosForReportId(payload.id);
         setPhotosForReporterId(reporterId);
@@ -171,14 +227,14 @@ export default function ReportPage() {
         }
       }
       setDescription("");
-      setFictionalTest(false);
+      setAiProcessingConsent(false);
       setLastSavedRef(shortRef(payload.id));
       setNotice(reporterId
         ? `Saved on this device (${payload.id.slice(0, 8)}). NOT delivered until the server confirms receipt.`
         : `Saved on this device (${payload.id.slice(0, 8)}), but no reporter session was available. This draft cannot be linked or synced automatically; keep this browser private and do not clear its data. NOT delivered.`);
       await refreshPending();
       await refreshEvidence();
-      if (navigator.onLine) await sync();
+      if (navigator.onLine) await sync({ id: payload.id, reporterId });
     } catch(e) { setError(e instanceof Error ? e.message : "Could not save report locally"); }
     finally { submitting.current = false; setBusy(false); }
   }
@@ -276,20 +332,29 @@ export default function ReportPage() {
         <Card className="p-4 sm:p-5">
           <StepLabel index={1} title="Where did it happen?" />
           <div className="mt-4">
-            <Field
-              label="Polling unit"
-              htmlFor="unit"
-              help="Confirm this unit before submitting. The current list is fictional test data."
-            >
-              <Select id="unit" value={unitId} onChange={(e) => { setUnitId(e.target.value); if (e.target.value) localStorage.setItem("signa:last-polling-unit", e.target.value); else localStorage.removeItem("signa:last-polling-unit"); }}>
-                <option value="">Select simulated polling unit</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code} — {u.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {fictionalAccess.enabled && (
+              <div className="mb-3 grid grid-cols-2 gap-2" role="group" aria-label="Reporting location type">
+                <button type="button" aria-pressed={locationMode === "actual"} onClick={() => { setLocationMode("actual"); setAiProcessingConsent(false); setUnitId(""); setUnits([]); }} className={cn("min-h-11 rounded-xl px-3 text-sm font-semibold", locationMode === "actual" ? "bg-midnight text-white" : "bg-canvas text-navy ring-1 ring-inset ring-[var(--hairline)]")}>Nationwide directory</button>
+                <button type="button" aria-pressed={locationMode === "simulated"} onClick={() => { setLocationMode("simulated"); setUnitId(""); setUnits([]); }} className={cn("min-h-11 rounded-xl px-3 text-sm font-semibold", locationMode === "simulated" ? "bg-midnight text-white" : "bg-canvas text-navy ring-1 ring-inset ring-[var(--hairline)]")}>Simulated test units</button>
+              </div>
+            )}
+            {locationMode === "actual" ? (
+              <DirectoryPicker selected={selectedUnit ?? null} onSelect={(unit) => { setUnitId(unit?.id ?? ""); setUnits(unit ? [unit] : []); if (unit) localStorage.setItem("signa:last-confirmed-unit", JSON.stringify(unit)); else localStorage.removeItem("signa:last-confirmed-unit"); }} />
+            ) : (
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-navy" htmlFor="simulated-unit">Simulated polling unit</label>
+                <Select id="simulated-unit" aria-label="Simulated polling unit" value={selectedUnit?.is_simulated ? selectedUnit.id : ""} onChange={(event) => { const unit = fictionalAccess.units.find((item) => item.id === event.target.value) ?? null; setUnitId(unit?.id ?? ""); setUnits(unit ? [unit] : []); }}>
+                  <option value="">Select a fictional test location</option>
+                  {fictionalAccess.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
+                </Select>
+                <p className="text-[12px] leading-relaxed text-slate-ink/75">Restricted fictional testing only. These locations are not official INEC polling units.</p>
+                {fictionalAccess.aiProcessingEnabled ? (
+                  <label className="flex items-start gap-2 text-[12px] leading-relaxed text-slate-ink/80"><input type="checkbox" checked={aiProcessingConsent} onChange={(event) => setAiProcessingConsent(event.target.checked)} className="mt-0.5 size-4 accent-primary" /><span>Allow this new fictional report and its staged photos to receive provisional Gemini assessment. Human review remains authoritative.</span></label>
+                ) : (
+                  <p className="rounded-lg bg-canvas px-3 py-2 text-[12px] text-slate-ink/80">Fictional reporting is available. External AI processing is disabled for this session.</p>
+                )}
+              </div>
+            )}
             <AnimatePresence>
               {selectedUnit && (
                 <motion.p
@@ -365,7 +430,6 @@ export default function ReportPage() {
               />
             </Field>
           </div>
-          <label className="mt-3 flex items-start gap-2 text-[12px] leading-relaxed text-slate-ink/80"><input type="checkbox" checked={fictionalTest} onChange={(event) => setFictionalTest(event.target.checked)} className="mt-0.5 size-4 accent-primary" /><span>This is a fictional test with no real personal information. In an approved demo session, text and photos may receive provisional AI assessment. Human review remains authoritative.</span></label>
         </Card>
       </Reveal>
 
@@ -501,7 +565,7 @@ export default function ReportPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-[15px] font-semibold text-navy">Alert recorded</p>
-                      <DeliveryChip state={busy ? "sending" : "saved"} size="sm" />
+                      <DeliveryChip state={latestReport.delivery} size="sm" />
                     </div>
                     <p className="mt-1.5 text-[13.5px] leading-relaxed text-slate-ink/85" role="status">
                       {notice}

@@ -1,23 +1,32 @@
 import "server-only";
+import {
+  fictionalAiReportAllowed,
+  fictionalAiReporterAllowed,
+  fictionalReportingAllowed,
+  type FictionalPolicyConfig,
+} from "@/lib/fictional-policy";
 
-/** Server-controlled demo allowlist. A client flag or simulated unit alone is insufficient. */
-export function approvedFictionalReporter(reporterId: string): boolean {
-  if (process.env.SIGNA_FICTIONAL_TEST_MODE !== "true") return false;
-  if (!fictionalTestStart()) return false;
-  return (process.env.SIGNA_FICTIONAL_TEST_REPORTER_IDS || "")
-    .split(",").map((id) => id.trim().toLowerCase())
-    .includes(reporterId.toLowerCase());
+function policyConfig(): FictionalPolicyConfig {
+  return {
+    reportingEnabled: process.env.SIGNA_FICTIONAL_REPORTING_MODE,
+    reportingReporterIds: process.env.SIGNA_FICTIONAL_REPORTER_IDS,
+    aiEnabled: process.env.SIGNA_FICTIONAL_TEST_MODE,
+    aiReporterIds: process.env.SIGNA_FICTIONAL_TEST_REPORTER_IDS,
+    aiStartAt: process.env.SIGNA_FICTIONAL_TEST_START_AT,
+  };
 }
 
-function fictionalTestStart(): number | null {
-  const value = process.env.SIGNA_FICTIONAL_TEST_START_AT;
-  if (!value || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(value)) return null;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? time : null;
+/** Server-controlled reporting allowlist. Client markers never grant simulated-unit access. */
+export function approvedFictionalReportingReporter(reporterId: string): boolean {
+  return fictionalReportingAllowed(reporterId, policyConfig());
+}
+
+/** Separate Gemini allowlist and activation cutoff; it may be narrower than reporting access. */
+export function approvedFictionalAiReporter(reporterId: string): boolean {
+  return fictionalAiReporterAllowed(reporterId, policyConfig());
 }
 
 /** Excludes older, unclassified records even when their reporter is later allowlisted. */
 export function approvedFictionalReport(reporterId: string, receivedAt: string): boolean {
-  const start = fictionalTestStart();
-  return start !== null && approvedFictionalReporter(reporterId) && Date.parse(receivedAt) >= start;
+  return fictionalAiReportAllowed(reporterId, receivedAt, policyConfig());
 }
