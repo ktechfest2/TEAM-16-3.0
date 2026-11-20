@@ -2,7 +2,7 @@
 import * as React from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { FileText, Home, LayoutDashboard, ListChecks, Siren, CircleHelp } from "lucide-react";
+import { FileText, Home, LayoutDashboard, ListChecks, Siren, CircleHelp, SearchCheck } from "lucide-react";
 import { Logo, LogoMark } from "./logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 const publicNav = [
   { href: "/report", label: "Report", icon: Siren },
   { href: "/my-reports", label: "My reports", icon: FileText },
+  { href: "/verify", label: "Verify", icon: SearchCheck },
   { href: "/help", label: "Help", icon: CircleHelp },
 ];
 const staffNav = [
@@ -70,6 +71,7 @@ export function MobileNav() {
   const items = isStaff(pathname) ? staffNav : [
     { href: "/my-reports", label: "Reports", icon: FileText },
     { href: "/report", label: "Report", icon: Siren, emphasis: true },
+    { href: "/verify", label: "Verify", icon: SearchCheck },
     { href: "/help", label: "Help", icon: CircleHelp },
   ];
   return (

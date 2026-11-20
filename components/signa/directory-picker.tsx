@@ -11,7 +11,6 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
   const [lga, setLga] = useState("");
   const [ward, setWard] = useState("");
   const [items, setItems] = useState<Record<Level, Place[]>>({ states: [], lgas: [], wards: [], units: [] });
-  const [filters, setFilters] = useState<Record<Level, string>>({ states: "", lgas: "", wards: "", units: "" });
   const [fullCode, setFullCode] = useState("");
   const [loading, setLoading] = useState<Level | "code" | null>(null);
   const [error, setError] = useState("");
@@ -36,7 +35,6 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
       wards: unit.ward ? [{ code: codes.wardCode, name: unit.ward }, ...current.wards.filter(item => item.code !== codes.wardCode)] : current.wards,
       units: [unit, ...current.units.filter(item => (item as Unit).id !== unit.id)],
     }));
-    setFilters({ states: "", lgas: "", wards: "", units: "" });
     return true;
   }
 
@@ -84,14 +82,12 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
   const control = (level: Level, label: string, value: string, disabled: boolean, change: (value: string) => void) => (
     <div className="min-w-0 space-y-1.5" key={level}>
       <Field label={label} htmlFor={`directory-${level}`}>
-        <Input aria-label={`Search ${label}`} type="search" placeholder={`Search ${label.toLowerCase()}`} value={filters[level]} onChange={event => setFilters(current => ({ ...current, [level]: event.target.value }))} disabled={disabled} />
-        <Select id={`directory-${level}`} value={value} disabled={disabled || loading === level} onChange={event => change(event.target.value)}>
+        <Select id={`directory-${level}`} value={value} disabled={disabled || loading === level} aria-busy={loading === level || undefined} onChange={event => change(event.target.value)}>
           <option value="">{loading === level ? "Loading…" : `Select ${label.toLowerCase()}`}</option>
-          {items[level].filter(item => `${item.code} ${item.name}`.toLowerCase().includes(filters[level].toLowerCase())).map(item => <option key={item.code} value={level === "units" ? (item as Unit).id : item.code}>{item.code} — {item.name}</option>)}
+          {items[level].map(item => <option key={level === "units" ? (item as Unit).id : item.code} value={level === "units" ? (item as Unit).id : item.code}>{item.code} — {item.name}</option>)}
         </Select>
       </Field>
       {!loading && !items[level].length && !disabled && <p className="text-xs text-slate-ink/70">No results loaded. Check your connection.</p>}
-      {!!filters[level] && !items[level].some(item => `${item.code} ${item.name}`.toLowerCase().includes(filters[level].toLowerCase())) && <p className="text-xs text-slate-ink/70">No matching results.</p>}
     </div>
   );
 
@@ -99,7 +95,6 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
     requestGeneration.current += 1;
     setState(value); setLga(""); setWard("");
     setItems(current => ({ ...current, lgas: [], wards: [], units: [] }));
-    setFilters(current => ({ ...current, lgas: "", wards: "", units: "" }));
     setLoading(null); setError(""); onSelect(null);
   }
 
@@ -107,7 +102,6 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
     requestGeneration.current += 1;
     setLga(value); setWard("");
     setItems(current => ({ ...current, wards: [], units: [] }));
-    setFilters(current => ({ ...current, wards: "", units: "" }));
     setLoading(null); setError(""); onSelect(null);
   }
 
@@ -115,7 +109,6 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
     requestGeneration.current += 1;
     setWard(value);
     setItems(current => ({ ...current, units: [] }));
-    setFilters(current => ({ ...current, units: "" }));
     setLoading(null); setError(""); onSelect(null);
   }
 
@@ -126,7 +119,10 @@ export function DirectoryPicker({ selected, onSelect }: { selected: Unit | null;
       {control("wards", "Ward", ward, !lga, changeWard)}
       {control("units", "Polling unit", selected?.id || "", !ward, value => { const unit = items.units.find(item => (item as Unit).id === value) as Unit | undefined; onSelect(unit ? { ...unit, is_simulated: false } : null); })}
     </div>
-    <div className="flex flex-wrap gap-2"><Input aria-label="Full polling-unit code" value={fullCode} onChange={event => setFullCode(event.target.value)} placeholder="Full code: 01/01/01/001" className="min-w-0 flex-1" /><button type="button" onClick={() => void findCode()} disabled={loading === "code"} className="min-h-11 rounded-xl bg-midnight px-4 text-sm font-semibold text-white">Find code</button></div>
+    <details className="rounded-xl bg-canvas px-3 py-2 ring-1 ring-inset ring-[var(--hairline)]">
+      <summary className="min-h-10 cursor-pointer py-2 text-sm font-semibold text-navy">Advanced: find by full polling-unit code</summary>
+      <div className="flex flex-wrap gap-2 pb-2 pt-1"><Input aria-label="Full polling-unit code" value={fullCode} onChange={event => setFullCode(event.target.value)} placeholder="Full code: 01/01/01/001" className="min-w-0 flex-1" /><button type="button" onClick={() => void findCode()} disabled={loading === "code"} className="min-h-11 rounded-xl bg-midnight px-4 text-sm font-semibold text-white">{loading === "code" ? "Finding…" : "Find code"}</button></div>
+    </details>
     {selected && <p className="text-xs text-trust">Confirmed: {selected.code} — {selected.name}</p>}
     {error && <p role="alert" className="text-xs text-alert">{error}</p>}
   </div>;
