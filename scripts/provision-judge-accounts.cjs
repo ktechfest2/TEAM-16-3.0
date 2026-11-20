@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 const { createClient } = require("@supabase/supabase-js");
 const { randomBytes } = require("node:crypto");
-const { writeFileSync } = require("node:fs");
+const { closeSync, openSync } = require("node:fs");
 const { isAbsolute, relative } = require("node:path");
+const { persistJsonState } = require("./private-state-writer.cjs");
 
 const rotate = process.argv.includes("--rotate");
 const apply = process.argv.includes("--apply") || rotate;
@@ -22,6 +23,12 @@ if (accounts.some((account) => !/^[0-9a-f-]{36}$/i.test(account.id || ""))) thro
 if (new Set(accounts.map((account) => account.id.toLowerCase())).size !== accounts.length) throw new Error("Judge accounts must use distinct UUIDs");
 
 const supabase = createClient(url, secret, { auth: { autoRefreshToken: false, persistSession: false } });
+let outputHandle = null;
+const credentialState = { generatedAt: new Date().toISOString(), status: "preflight", credentials: [] };
+function persistPrivateState() {
+  if (outputHandle === null) return;
+  persistJsonState(outputHandle, credentialState);
+}
 (async () => {
   for (const account of accounts) {
     const [{ data: auth, error: authError }, { data: profile, error: profileError }] = await Promise.all([
@@ -38,14 +45,32 @@ const supabase = createClient(url, secret, { auth: { autoRefreshToken: false, pe
     process.stdout.write("Verified three distinct dedicated test accounts. No changes made.\n");
     return;
   }
-  const credentials = [];
+  // Claim the private destination before changing any account. `wx` refuses an
+  // existing file, and the state is rewritten after every successful rotation
+  // so a partial run never loses the password for an already-updated account.
+  outputHandle = openSync(output, "wx", 0o600);
+  credentialState.status = "in_progress";
+  persistPrivateState();
+  const issuedPasswords = new Set();
   for (const account of accounts) {
-    const password = `${randomBytes(24).toString("base64url")}!9a`;
+    let password;
+    do { password = `${randomBytes(12).toString("base64url")}!9a`; } while (issuedPasswords.has(password));
+    issuedPasswords.add(password);
     const attributes = rotate ? { password } : { email: account.email, password, email_confirm: true };
     const { data, error } = await supabase.auth.admin.updateUserById(account.id, attributes);
     if (error || data.user?.id !== account.id) throw new Error(`${account.label} update failed`);
-    credentials.push({ role: account.label, email: account.email, password, userId: account.id });
+    credentialState.credentials.push({ role: account.label, email: account.email, password, userId: account.id });
+    persistPrivateState();
   }
-  writeFileSync(output, `${JSON.stringify({ generatedAt: new Date().toISOString(), credentials }, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  credentialState.status = "complete";
+  persistPrivateState();
+  closeSync(outputHandle); outputHandle = null;
   process.stdout.write(`Updated three existing account identities. Credentials written only to the requested private file.\n`);
-})().catch((error) => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+})().catch((error) => {
+  if (outputHandle !== null) {
+    credentialState.status = "partial";
+    persistPrivateState();
+    closeSync(outputHandle); outputHandle = null;
+  }
+  process.stderr.write(`${error.message}\n`); process.exitCode = 1;
+});

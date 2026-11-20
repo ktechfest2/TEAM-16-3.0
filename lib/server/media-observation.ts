@@ -1,4 +1,5 @@
 import "server-only";
+import { ProviderFailure, providerHttpFailure } from "./provider-diagnostics";
 
 export type MediaObservation = {
   summary: string;
@@ -26,11 +27,12 @@ export async function observePublicImage(input: { bytes: Uint8Array; mimeType: s
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: input.mimeType, data: Buffer.from(input.bytes).toString("base64") } }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0, maxOutputTokens: 800 } }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Media observation provider returned HTTP ${response.status}`);
-  const payload = await response.json();
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw providerHttpFailure(response.status, payload);
   const text = payload?.candidates?.[0]?.content?.parts?.find((part: { text?: unknown }) => typeof part.text === "string")?.text;
-  if (typeof text !== "string") throw new Error("Media observation provider returned no structured result");
-  const value = JSON.parse(text) as Partial<MediaObservation>;
-  if (typeof value.summary !== "string" || value.summary.length > 2_000 || typeof value.visibleText !== "string" || value.visibleText.length > 5_000 || !Array.isArray(value.observations) || !value.observations.every((item) => typeof item === "string") || !Array.isArray(value.uncertainty) || !value.uncertainty.every((item) => typeof item === "string") || ![true, false, null].includes(value.mayBeNonPhotographic ?? null)) throw new Error("Media observation result was invalid");
+  if (typeof text !== "string") throw new ProviderFailure("malformed_output");
+  let value: Partial<MediaObservation>;
+  try { value = JSON.parse(text) as Partial<MediaObservation>; } catch { throw new ProviderFailure("malformed_output"); }
+  if (typeof value.summary !== "string" || value.summary.length > 2_000 || typeof value.visibleText !== "string" || value.visibleText.length > 5_000 || !Array.isArray(value.observations) || !value.observations.every((item) => typeof item === "string") || !Array.isArray(value.uncertainty) || !value.uncertainty.every((item) => typeof item === "string") || ![true, false, null].includes(value.mayBeNonPhotographic ?? null)) throw new ProviderFailure("malformed_output");
   return { summary: value.summary, visibleText: value.visibleText, observations: value.observations.slice(0, 20), uncertainty: value.uncertainty.slice(0, 20), mayBeNonPhotographic: value.mayBeNonPhotographic ?? null };
 }

@@ -7,6 +7,7 @@ import { analyseClaimWithEvidence } from "@/lib/server/verify-analysis";
 import { enforceAbuseLimit } from "@/lib/server/rate-limit";
 import { AccessError } from "@/lib/server/auth";
 import { DependencyUnavailableError, errorResponse, noStore } from "@/lib/server/responses";
+import { logProviderFailure } from "@/lib/server/provider-diagnostics";
 
 export const maxDuration = 30;
 
@@ -33,11 +34,12 @@ export async function POST(req: Request) {
     const claim = parsed.claim || extracted?.text || "";
     if (!claim) return NextResponse.json({ error: { code: "INPUT", message: "Paste the claim text because this article could not be extracted safely" } }, { status: 400, headers: noStore });
     const evidence = await searchPublishedEvidence(claim, config.factCheckKey);
-    if (!evidence.coverage.some((item) => item.searched)) throw new DependencyUnavailableError("Published evidence search is unavailable");
+    if (!evidence.sources.length && !evidence.coverage.some((item) => item.searched)) throw new DependencyUnavailableError("Published evidence search is unavailable", "google_fact_check_unavailable");
     let analysis: VerifyAnalysis;
     let analysisStatus: "completed" | "provider_unavailable" = "completed";
     try { analysis = await analyseClaimWithEvidence({ claim, sources: evidence.sources, key: config.geminiKey, model: config.geminiModel }); }
-    catch {
+    catch (error) {
+      logProviderFailure({ provider: "gemini", operation: "claim_evidence_analysis", model: config.geminiModel, error });
       analysisStatus = "provider_unavailable";
       analysis = {
         outcome: "insufficient_evidence",

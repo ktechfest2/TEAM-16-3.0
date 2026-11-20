@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ExternalLink, ImageIcon, Link2, SearchCheck, ShieldCheck, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,25 +34,33 @@ export function VerifyExperience({ enabled, linksEnabled, mediaExternalEnabled }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<Result | null>(null);
+  const requestGeneration = useRef(0);
+
+  function selectMode(next: "text" | "link" | "image") {
+    requestGeneration.current += 1;
+    setMode(next); setResult(null); setError(""); setLoading(false);
+    if (next !== "link") setArticleUrl("");
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!enabled || loading) return;
+    const generation = ++requestGeneration.current;
     setLoading(true); setError(""); setResult(null);
     try {
       const response = await fetch("/api/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ claim, articleUrl, externalProcessingConsent: consent }), cache: "no-store" });
       const body = await response.json().catch(() => null) as Result & { error?: { message?: string } } | null;
       if (!response.ok || !body?.analysis) throw new Error(body?.error?.message || "Verification could not be completed");
-      setResult(body);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "Verification could not be completed"); }
-    finally { setLoading(false); }
+      if (generation === requestGeneration.current) setResult(body);
+    } catch (caught) { if (generation === requestGeneration.current) setError(caught instanceof Error ? caught.message : "Verification could not be completed"); }
+    finally { if (generation === requestGeneration.current) setLoading(false); }
   }
 
   const cited = new Set(result?.analysis.citedSourceIds || []);
   return <>
     <PageHeader eyebrow={<><SearchCheck className="size-4" aria-hidden /> Public fact-checking</>} title="Verify an election claim" description="Compare a pasted claim with published fact-check evidence. Signa shows its sources and uncertainty; it does not certify election results." />
     <div className="mt-7 grid grid-cols-3 gap-2" role="tablist" aria-label="Verification method">
-      {([{ id: "text", label: "Text", icon: Type }, { id: "link", label: "Link", icon: Link2 }, { id: "image", label: "Image", icon: ImageIcon }] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={mode === id} onClick={() => setMode(id)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold ${mode === id ? "bg-midnight text-white" : "bg-white text-navy ring-1 ring-inset ring-[var(--hairline)]"}`}><Icon className="size-4" aria-hidden />{label}</button>)}
+      {([{ id: "text", label: "Text", icon: Type }, { id: "link", label: "Link", icon: Link2 }, { id: "image", label: "Image", icon: ImageIcon }] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button" role="tab" aria-selected={mode === id} onClick={() => selectMode(id)} className={`flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold ${mode === id ? "bg-midnight text-white" : "bg-white text-navy ring-1 ring-inset ring-[var(--hairline)]"}`}><Icon className="size-4" aria-hidden />{label}</button>)}
     </div>
     {mode !== "image" && <Card className="mt-4 p-5 sm:p-6">
       {!enabled && <p role="status" className="mb-5 rounded-xl bg-warn-soft p-3 text-sm text-slate-ink">Evidence search is temporarily unavailable. Image checks remain available locally.</p>}
@@ -77,6 +85,6 @@ export function VerifyExperience({ enabled, linksEnabled, mediaExternalEnabled }
       <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-ink"><ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden />{result.notice}</p>
       </section>}
     </Card>}
-    {mode === "image" && <MediaIntegrityPanel externalEnabled={mediaExternalEnabled} onUseText={(text) => { setClaim(text); setMode("text"); setResult(null); }} />}
+    {mode === "image" && <MediaIntegrityPanel externalEnabled={mediaExternalEnabled} onUseText={(text) => { setClaim(text); selectMode("text"); }} />}
   </>;
 }

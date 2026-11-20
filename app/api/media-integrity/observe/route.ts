@@ -5,6 +5,7 @@ import { mediaIntegrityConfiguration } from "@/lib/server/media-integrity-config
 import { observePublicImage } from "@/lib/server/media-observation";
 import { inspectImageBytes, MAX_MEDIA_BYTES } from "@/lib/media-integrity";
 import { DependencyUnavailableError, errorResponse, noStore } from "@/lib/server/responses";
+import { logProviderFailure } from "@/lib/server/provider-diagnostics";
 
 export const maxDuration = 30;
 
@@ -26,7 +27,10 @@ export async function POST(req: Request) {
     const inspection = await inspectImageBytes(file.type, bytes);
     let observation;
     try { observation = await observePublicImage({ bytes, mimeType: inspection.mimeType, key: config.key, model: config.model }); }
-    catch { throw new DependencyUnavailableError("External image observations are unavailable"); }
+    catch (error) {
+      const details = logProviderFailure({ provider: "gemini", operation: "public_image_observation", model: config.model, error });
+      throw new DependencyUnavailableError("External image observations are unavailable", `gemini_${details.category}`);
+    }
     return NextResponse.json({ observation, notice: "Visual observations and extracted text are provisional. They do not authenticate the image or detect synthetic media." }, { headers: noStore });
   } catch (error) { return errorResponse(error); }
 }
