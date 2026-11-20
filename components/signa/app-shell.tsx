@@ -146,8 +146,8 @@ export function SiteFooter() {
         <div className="space-y-2.5">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-ink">Scope</p>
           <p className="text-[13px] leading-relaxed text-slate-ink/75">
-            Independent prototype. No emergency dispatch, police response or INEC integration.
-            Polling units in this environment are fictional and labelled simulated.
+            Independent prototype. No emergency dispatch, police response or INEC partnership.
+            Directory data is an imported snapshot; restricted demo locations are clearly labelled simulated.
           </p>
         </div>
       </div>

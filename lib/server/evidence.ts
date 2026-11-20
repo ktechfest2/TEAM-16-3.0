@@ -5,6 +5,7 @@ import { DependencyUnavailableError } from "./responses";
 import { adminClient } from "./supabase";
 import type { EvidenceItem, EvidenceMime } from "@/lib/evidence-contract";
 import { enforceAbuseLimit } from "./rate-limit";
+import { judgeCanAccessReport } from "./judge-access";
 
 export const EVIDENCE_BUCKET = "signa-evidence";
 const extensionByMime: Record<EvidenceMime, string> = {
@@ -36,6 +37,7 @@ export async function reporterOwnsReport(reportId: string, reporterId: string): 
 
 export async function canViewReportEvidence(reportId: string, viewer: Viewer): Promise<boolean> {
   const db = adminClient();
+  if (!(await judgeCanAccessReport(viewer.userId, reportId))) return false;
   if (viewer.role === "admin" || viewer.role === "monitor") return true;
   if (viewer.role === "reporter") return reporterOwnsReport(reportId, viewer.userId);
   const { data: links, error: linksError } = await db.from("incident_reports")
