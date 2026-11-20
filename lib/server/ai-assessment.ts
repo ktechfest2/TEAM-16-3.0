@@ -25,7 +25,7 @@ export async function observeWithGemini(description: string, images: Array<{ mim
   for (const image of images) parts.push({ inline_data: { mime_type: image.mimeType, data: Buffer.from(image.bytes).toString("base64") } });
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(process.env.GEMINI_MODEL || "gemini-2.5-flash")}:generateContent`, {
     method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: outputSchema, temperature: 0.1 } }),
+    body: JSON.stringify({ contents: [{ parts }], generationConfig: { responseMimeType: "application/json", responseSchema: outputSchema, temperature: 0.1, maxOutputTokens: 1024 } }),
     signal: AbortSignal.timeout(20_000),
   });
   if (!response.ok) throw new Error(`Gemini returned HTTP ${response.status}`);
