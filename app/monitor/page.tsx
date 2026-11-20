@@ -208,7 +208,7 @@ export default function MonitorPage() {
       {/* ---------- Tabs + search ---------- */}
       <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div
-          role="tablist"
+          role="group"
           aria-label="Monitor views"
           className="inline-flex rounded-[12px] bg-[rgba(15,23,42,0.05)] p-1"
         >
@@ -218,8 +218,8 @@ export default function MonitorPage() {
           ]).map((item) => (
             <button
               key={item.id}
-              role="tab"
-              aria-selected={tab === item.id}
+              type="button"
+              aria-pressed={tab === item.id}
               onClick={() => setTab(item.id)}
               className={cn(
                 "flex min-h-[38px] items-center gap-2 rounded-[9px] px-4 text-[13.5px] font-semibold transition-all duration-200",
