@@ -52,3 +52,29 @@ test("Verify presents separate text, link and image modes with inline results", 
   await page.getByRole("button", { name: "Check available evidence" }).click();
   await expect(page.getByText("Insufficient evidence", { exact: true })).toBeVisible();
 });
+
+test("switching modes clears link warnings and ignores a delayed result from the prior mode", async ({ page, context }) => {
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  await context.route("**/api/verify", async route => {
+    await responseGate;
+    await route.fulfill({ json: {
+      analysisStatus: "completed",
+      analysis: { outcome: "insufficient_evidence", explanation: "Delayed link result.", citedSourceIds: [], uncertainty: "Coverage may be incomplete." },
+      sources: [], coverage: [], inputSource: null, linkWarning: "The article could not be read.", notice: "No certification is made.",
+    } });
+  });
+  await page.goto("/verify");
+  await page.getByRole("tab", { name: "Link" }).click();
+  await page.getByLabel("Public article link").fill("https://dubawa.org/example");
+  await page.getByLabel("Claim text (recommended fallback)").fill("A controlled fictional election claim");
+  await page.getByLabel(/I agree that the text/).check();
+  await page.getByRole("button", { name: "Check available evidence" }).click();
+  await page.getByRole("tab", { name: "Image" }).click();
+  releaseResponse();
+  await expect(page.getByLabel("Image to inspect")).toBeVisible();
+  await expect(page.getByText("The article could not be read.", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Delayed link result.", { exact: true })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Link" }).click();
+  await expect(page.getByLabel("Public article link")).toHaveValue("");
+});

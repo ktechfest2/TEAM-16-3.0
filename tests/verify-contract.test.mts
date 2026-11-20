@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parseVerifyRequest, validateSupportedVerifyUrl, validateVerifyAnalysis, verifyOutcomes, type VerifySource } from "../lib/verify-contract.ts";
+import { normalizeFactCheckQuery } from "../lib/fact-check-query.ts";
 
 const source: VerifySource = { id: "source-1", title: "Published review", url: "https://dubawa.org/review", publisher: "DUBAWA", publishedAt: "2026-11-20", claim: "The reviewed claim", rating: "False" };
 
@@ -43,4 +44,13 @@ test("credible-source search records partial coverage without inventing searches
   assert.match(search, /result\.status === "fulfilled"/);
   assert.match(search, /reviewPublisherSiteFilter/);
   for (const domain of ["inecnigeria.org", "dubawa.org", "factcheckhub.com", "africacheck.org"]) assert.match(search, new RegExp(domain.replace(".", "\\.")));
+});
+
+test("fact-check queries remove forwarding noise and remain bounded", () => {
+  const noisy = `BREAKING election result claim please share this forwarded message ${"election result claim ".repeat(40)} https://example.test/post`;
+  const normalized = normalizeFactCheckQuery(noisy);
+  assert.ok(normalized.length <= 280);
+  assert.doesNotMatch(normalized, /https?:\/\//i);
+  assert.doesNotMatch(normalized, /forwarded/i);
+  assert.match(normalized, /election result claim/i);
 });

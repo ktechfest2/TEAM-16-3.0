@@ -1,5 +1,6 @@
 import "server-only";
 import { validateVerifyAnalysis, type VerifyAnalysis, type VerifySource } from "@/lib/verify-contract";
+import { ProviderFailure, providerHttpFailure } from "./provider-diagnostics";
 
 const schema = {
   type: "OBJECT",
@@ -32,9 +33,10 @@ export async function analyseClaimWithEvidence(input: { claim: string; sources: 
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", responseSchema: schema, temperature: 0, maxOutputTokens: 1_024 } }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new Error(`Verification provider returned HTTP ${response.status}`);
-  const payload = await response.json();
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw providerHttpFailure(response.status, payload);
   const text = payload?.candidates?.[0]?.content?.parts?.find((part: { text?: unknown }) => typeof part.text === "string")?.text;
-  if (typeof text !== "string") throw new Error("Verification provider returned no structured analysis");
-  return validateVerifyAnalysis(JSON.parse(text), input.sources);
+  if (typeof text !== "string") throw new ProviderFailure("malformed_output");
+  try { return validateVerifyAnalysis(JSON.parse(text), input.sources); }
+  catch { throw new ProviderFailure("malformed_output"); }
 }

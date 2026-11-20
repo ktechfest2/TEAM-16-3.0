@@ -13,10 +13,10 @@ type Limit = { scope: "report" | "evidence" | "ai_assessment" | "voice" | "verif
  */
 export async function enforceAbuseLimit(req: Request, reporterId: string | null, limit: Limit): Promise<void> {
   const hmacSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!hmacSecret) throw new DependencyUnavailableError("Abuse controls are unavailable");
+  if (!hmacSecret) throw new DependencyUnavailableError("Abuse controls are unavailable", "database_limiter_configuration");
 
   const ip = trustedClientIp(req);
-  if (!reporterId && !ip) throw new DependencyUnavailableError("Abuse controls are unavailable");
+  if (!reporterId && !ip) throw new DependencyUnavailableError("Abuse controls are unavailable", "trusted_client_address");
   const checks = [
     ...(reporterId ? [consume(limit.scope, `reporter:${reporterId}`, hmacSecret, limit.reporterMax, limit.windowSeconds)] : []),
     ...(ip ? [consume(limit.scope, `network:${ip}`, hmacSecret, limit.ipMax, limit.windowSeconds)] : []),
@@ -36,10 +36,10 @@ async function consume(scope: Limit["scope"], identity: string, hmacSecret: stri
       p_window_seconds: windowSeconds,
     });
   } catch {
-    throw new DependencyUnavailableError("Abuse controls are unavailable");
+    throw new DependencyUnavailableError("Abuse controls are unavailable", "database_limiter_connection");
   }
   if (result.error || typeof result.data !== "boolean")
-    throw new DependencyUnavailableError("Abuse controls are unavailable");
+    throw new DependencyUnavailableError("Abuse controls are unavailable", "database_limiter_rpc");
   return result.data;
 }
 
