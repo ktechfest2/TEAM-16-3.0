@@ -36,7 +36,8 @@ export async function POST(req: Request) {
 
     const markedFictional = parsed.fictionalTestSubmission === true;
     const reportingApproved = approvedFictionalReportingReporter(viewer.userId);
-    if (!unit || !reportLocationAllowed({ isSimulated: unit.is_simulated, markedFictional, fictionalReportingApproved: reportingApproved }))
+    const demoRequiresFictionalUnit = process.env.SIGNA_DEMO_MODE === "true";
+    if (!unit || demoRequiresFictionalUnit && !unit.is_simulated || !reportLocationAllowed({ isSimulated: unit.is_simulated, markedFictional, fictionalReportingApproved: reportingApproved }))
       return NextResponse.json({ error: { code: "UNIT", message: "Polling unit unavailable for this reporter session" } }, { status: 400, headers: noStore });
 
     await enforceAbuseLimit(req, viewer.userId, { scope: "report", reporterMax: 30, ipMax: 120, windowSeconds: 600 });
