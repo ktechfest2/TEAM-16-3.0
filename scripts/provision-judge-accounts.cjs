@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 const { createClient } = require("@supabase/supabase-js");
 const { randomBytes } = require("node:crypto");
-const { closeSync, ftruncateSync, openSync, writeFileSync } = require("node:fs");
+const { closeSync, openSync } = require("node:fs");
 const { isAbsolute, relative } = require("node:path");
+const { persistJsonState } = require("./private-state-writer.cjs");
 
 const rotate = process.argv.includes("--rotate");
 const apply = process.argv.includes("--apply") || rotate;
@@ -26,9 +27,7 @@ let outputHandle = null;
 const credentialState = { generatedAt: new Date().toISOString(), status: "preflight", credentials: [] };
 function persistPrivateState() {
   if (outputHandle === null) return;
-  const payload = `${JSON.stringify(credentialState, null, 2)}\n`;
-  ftruncateSync(outputHandle, 0);
-  writeFileSync(outputHandle, payload, { encoding: "utf8" });
+  persistJsonState(outputHandle, credentialState);
 }
 (async () => {
   for (const account of accounts) {

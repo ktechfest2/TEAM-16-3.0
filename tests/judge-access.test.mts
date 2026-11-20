@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createRequire } from "node:module";
 import test from "node:test";
+
+const require = createRequire(import.meta.url);
+const { persistJsonState } = require("../scripts/private-state-writer.cjs") as {
+  persistJsonState: (fileDescriptor: number, state: unknown) => void;
+};
 
 test("judge access is a server-only UUID allowlist restricted to simulated records", () => {
   const policy = readFileSync(new URL("../lib/server/judge-access.ts", import.meta.url), "utf8");
@@ -28,4 +36,28 @@ test("judge provisioning preserves UUIDs, checks trusted roles, and never prints
   assert.match(script, /credentialState\.status = "partial"/);
   assert.match(script, /persistPrivateState\(\)/);
   assert.doesNotMatch(script, /console\.log\(.*password/);
+});
+
+test("judge credential state rewrites are positioned, truncated, durable JSON", () => {
+  const directory = mkdtempSync(join(tmpdir(), "signa-judge-state-"));
+  const path = join(directory, "credentials.json");
+  const descriptor = openSync(path, "wx", 0o600);
+  try {
+    const states = [
+      { status: "in_progress", credentials: [{ role: "Reviewer 1", password: "first-secret-value" }] },
+      { status: "partial", credentials: [] },
+      { status: "complete", credentials: [{ role: "Reviewer 1" }, { role: "Reviewer 2" }, { role: "Coordinator" }] },
+    ];
+    for (const state of states) {
+      persistJsonState(descriptor, state);
+      const bytes = readFileSync(path);
+      assert.equal(bytes.includes(0), false);
+      assert.deepEqual(JSON.parse(bytes.toString("utf8")), state);
+      assert.equal(bytes.toString("utf8"), `${JSON.stringify(state, null, 2)}\n`);
+    }
+  } finally {
+    closeSync(descriptor);
+    unlinkSync(path);
+    rmdirSync(directory);
+  }
 });
